@@ -2,7 +2,7 @@ name: Verify
 
 on:
   push:
-    branches: [main, codex/core-cli]
+    branches: [main]
   pull_request:
 
 permissions:
@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: swift-actions/setup-swift@7591e4f04c00624cb043783da51a7fd6ee0a6bf6
+      - uses: swift-actions/setup-swift@364295d9c23900ce04d4e5cc708387921b4e50f9
         with:
           swift-version: '6.3.1'
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
