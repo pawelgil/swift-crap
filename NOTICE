@@ -1,0 +1,8 @@
+swift-crap
+Copyright 2026 swift-crap contributors
+
+Licensed under the Apache License, Version 2.0.
+See LICENSE for the terms and THIRD_PARTY_NOTICES.md for upstream attributions.
+
+The LLVM coverage algorithms and SwiftIfConfig position-query adaptation
+retain their separately described upstream licenses and notices.

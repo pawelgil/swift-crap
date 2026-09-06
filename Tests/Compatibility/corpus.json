@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "repositories": [
+    {
+      "id": "swift-algorithms",
+      "url": "https://github.com/apple/swift-algorithms.git",
+      "release": "1.2.1",
+      "commit": "87e50f483c54e6efd60e885f7f5aa946cee68023",
+      "license": "Apache-2.0 WITH Swift-exception",
+      "testProduct": "swift-algorithmsPackageTests",
+      "auditTarget": "Algorithms",
+      "dependencyPins": [
+        {
+          "identity": "swift-numerics",
+          "release": "1.1.1",
+          "commit": "0c0290ff6b24942dadb83a929ffaaa1481df04a2"
+        }
+      ]
+    },
+    {
+      "id": "swift-collections",
+      "url": "https://github.com/apple/swift-collections.git",
+      "release": "1.6.0",
+      "commit": "a0cb0954ecb21e4e31b0070e6ed5674e8556685a",
+      "license": "Apache-2.0 WITH Swift-exception",
+      "testProduct": "swift-collectionsPackageTests",
+      "auditTarget": "HeapModule",
+      "dependencyPins": []
+    },
+    {
+      "id": "swift-argument-parser",
+      "url": "https://github.com/apple/swift-argument-parser.git",
+      "release": "1.8.2",
+      "commit": "6a52f3251125d74daf04fcbd5e6f08a75d074382",
+      "license": "Apache-2.0 WITH Swift-exception",
+      "testProduct": "swift-argument-parserPackageTests",
+      "auditTarget": "ArgumentParser",
+      "dependencyPins": []
+    }
+  ]
+}
