@@ -123,8 +123,72 @@ struct LocalSourceSelectorTests {
         #expect(result.files.isEmpty)
     }
 
-    private func createSUT(packageDescriber: any PackageDescribing = PackageDescribingSpy()) -> LocalSourceSelector {
-        LocalSourceSelector(packageDescriber: packageDescriber)
+    @Test func `project selection excludes SwiftPM manifests`() throws {
+        let fixture = try makeFixture()
+        defer { fixture.remove() }
+        let source = fixture.directory.appendingPathComponent("App.swift")
+        try Data("func app() {}".utf8).write(to: source)
+        try Data("import PackageDescription".utf8)
+            .write(to: fixture.directory.appendingPathComponent("Package.swift"))
+        try Data("import PackageDescription".utf8)
+            .write(to: fixture.directory.appendingPathComponent("Package@swift-6.0.swift"))
+        let sut = createSUT()
+
+        let result = try sut.select(SourceSelectionRequest(scope: .project(fixture.directory.path)))
+
+        #expect(result.files == [SelectedSource(path: source.path, relativePath: "App.swift")])
+    }
+
+    @Test func `Xcode selection uses resolved target membership`() throws {
+        let fixture = try makeFixture()
+        defer { fixture.remove() }
+        let project = fixture.directory.appendingPathComponent("App.xcodeproj", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: false)
+        let included = fixture.directory.appendingPathComponent("Included.swift")
+        let adjacent = fixture.directory.appendingPathComponent("Adjacent.swift")
+        try Data("func included() {}".utf8).write(to: included)
+        try Data("func adjacent() {}".utf8).write(to: adjacent)
+        let xcode = XcodeProjectDescribingSpy(sourceFiles: [included.path])
+        let sut = createSUT(xcodeDescriber: xcode)
+
+        let result = try sut.select(SourceSelectionRequest(scope: .xcode(XcodeSelection(
+            project: project.path,
+            scheme: "App",
+            target: "App",
+        ))))
+
+        #expect(result.files == [SelectedSource(path: included.path, relativePath: "Included.swift")])
+        #expect(xcode.selections == [XcodeSelection(
+            project: project.path,
+            scheme: "App",
+            target: "App",
+        )])
+    }
+
+    @Test func `Xcode membership cannot escape project root`() throws {
+        let fixture = try makeFixture()
+        defer { fixture.remove() }
+        let project = fixture.directory.appendingPathComponent("App.xcodeproj", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: false)
+        let outside = fixture.directory.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".swift")
+        defer { try? FileManager.default.removeItem(at: outside) }
+        try Data("func outside() {}".utf8).write(to: outside)
+        let sut = createSUT(xcodeDescriber: XcodeProjectDescribingSpy(sourceFiles: [outside.path]))
+
+        #expect(throws: SourceSelectionError.escapedRoot(outside.path)) {
+            try sut.select(SourceSelectionRequest(scope: .xcode(XcodeSelection(
+                project: project.path,
+                scheme: "App",
+                target: "App",
+            ))))
+        }
+    }
+
+    private func createSUT(
+        packageDescriber: any PackageDescribing = PackageDescribingSpy(),
+        xcodeDescriber: any XcodeProjectDescribing = XcodeProjectDescribingSpy(),
+    ) -> LocalSourceSelector {
+        LocalSourceSelector(packageDescriber: packageDescriber, xcodeDescriber: xcodeDescriber)
     }
 
     private func makeFixture() throws -> TemporaryFixture {
@@ -134,6 +198,20 @@ struct LocalSourceSelectorTests {
         )
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
         return TemporaryFixture(directory: directory)
+    }
+}
+
+private final class XcodeProjectDescribingSpy: XcodeProjectDescribing {
+    private(set) var selections: [XcodeSelection] = []
+    private let sourceFiles: [String]
+
+    init(sourceFiles: [String] = []) {
+        self.sourceFiles = sourceFiles
+    }
+
+    func describe(_ selection: XcodeSelection) throws -> XcodeProjectMetadata {
+        selections.append(selection)
+        return XcodeProjectMetadata(sourceFiles: sourceFiles, compilerContexts: [])
     }
 }
 

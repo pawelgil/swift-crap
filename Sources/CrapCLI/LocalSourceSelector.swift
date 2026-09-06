@@ -4,10 +4,16 @@ import Foundation
 struct LocalSourceSelector: SourceSelecting {
     private let fileManager: FileManager
     private let packageDescriber: any PackageDescribing
+    private let xcodeDescriber: any XcodeProjectDescribing
 
-    init(fileManager: FileManager = .default, packageDescriber: any PackageDescribing = SwiftPackageDescriber()) {
+    init(
+        fileManager: FileManager = .default,
+        packageDescriber: any PackageDescribing = SwiftPackageDescriber(),
+        xcodeDescriber: any XcodeProjectDescribing = XcodeProjectDescriber(),
+    ) {
         self.fileManager = fileManager
         self.packageDescriber = packageDescriber
+        self.xcodeDescriber = xcodeDescriber
     }
 
     func select(_ request: SourceSelectionRequest) throws -> SelectedSources {
@@ -21,6 +27,8 @@ struct LocalSourceSelector: SourceSelecting {
             try package(directory: directory, target: target, rootOverride: request.rootOverride)
         case let .project(path):
             try project(path: path)
+        case let .xcode(request):
+            try xcode(request)
         }
         return try normalized(selection, exclusions: exclusions)
     }
@@ -84,6 +92,27 @@ struct LocalSourceSelector: SourceSelecting {
     private func project(path: String) throws -> RawSelection {
         let root = try directory(path)
         return RawSelection(root: root, candidates: [root], filtering: .project)
+    }
+
+    private func xcode(_ request: XcodeSelection) throws -> RawSelection {
+        let project = try directory(request.project)
+        guard project.pathExtension == "xcodeproj" else {
+            throw SourceSelectionError.invalidXcodeProject(request.project)
+        }
+        let root = project.deletingLastPathComponent()
+        let resolved = XcodeSelection(
+            project: project.path,
+            scheme: request.scheme,
+            target: request.target,
+            configuration: request.configuration,
+            destination: request.destination,
+        )
+        let metadata = try xcodeDescriber.describe(resolved)
+        return RawSelection(
+            root: root,
+            candidates: metadata.sourceFiles.map { URL(fileURLWithPath: $0) },
+            filtering: .explicit,
+        )
     }
 
     private func productionTargets(
@@ -158,7 +187,10 @@ struct LocalSourceSelector: SourceSelecting {
                     try swiftFiles(at: $0, root: root, filtering: filtering, exclusions: exclusions, visited: &visited)
                 }
         }
-        guard values.isRegularFile == true, resolved.pathExtension == "swift" else {
+        guard values.isRegularFile == true,
+              resolved.pathExtension == "swift",
+              filtering.includes(file: relativePath)
+        else {
             return []
         }
         return [resolved]

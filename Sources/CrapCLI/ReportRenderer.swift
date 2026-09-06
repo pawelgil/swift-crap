@@ -22,12 +22,16 @@ struct ReportRenderer {
     private func text(_ report: AnalysisReport) -> String {
         var lines = [
             "metric: \(report.metric)",
+            "verification: \(report.verification ?? "library-unverified")",
             "threshold: \(number(report.summary.threshold))",
             "functions: \(report.summary.totalFunctions)",
             "measured: \(report.summary.measuredFunctions)",
             "assumed: \(report.summary.assumedFunctions)",
             "violations: \(report.summary.violations)",
         ]
+        if let buildIdentity = report.buildIdentity {
+            lines.insert("build-identity: \(buildIdentity)", at: 2)
+        }
         lines.append(contentsOf: report.functions.map(function))
         return lines.joined(separator: "\n") + "\n"
     }

@@ -11,6 +11,7 @@ let package = Package(
         .executable(name: "swift-crap", targets: ["CrapCLI"]),
     ],
     dependencies: [
+        .package(url: "https://github.com/apple/swift-crypto.git", exact: "4.5.2"),
         .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "603.0.2"),
     ],
     targets: [
@@ -18,12 +19,16 @@ let package = Package(
         .target(name: "CrapCoverage", dependencies: ["CrapCore"]),
         .target(name: "CrapSyntax", dependencies: [
             "CrapCore",
+            .product(name: "SwiftIfConfig", package: "swift-syntax"),
             .product(name: "SwiftSyntax", package: "swift-syntax"),
             .product(name: "SwiftParser", package: "swift-syntax"),
+            .product(name: "SwiftParserDiagnostics", package: "swift-syntax"),
         ]),
         .target(name: "CrapApplication", dependencies: ["CrapCore"]),
         .executableTarget(name: "CrapCLI", dependencies: [
             "CrapApplication", "CrapCore", "CrapCoverage", "CrapSyntax",
+            .product(name: "Crypto", package: "swift-crypto"),
+            .product(name: "SwiftIfConfig", package: "swift-syntax"),
         ]),
         .testTarget(name: "CrapCoreTests", dependencies: ["CrapCore"]),
         .testTarget(name: "CrapCoverageTests", dependencies: ["CrapCoverage", "CrapCore"]),

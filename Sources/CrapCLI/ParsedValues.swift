@@ -14,6 +14,12 @@ struct ParsedValues {
     var root: String?
     var target: String?
     var threshold = 30.0
+    var provenance: String?
+    var trustCoverage: String?
+    var xcodeProject: String?
+    var scheme: String?
+    var configuration: String?
+    var destination: String?
 
     mutating func append(option: String, value: String) throws {
         switch option {
@@ -29,11 +35,21 @@ struct ParsedValues {
         case "--sources-manifest": manifest = try unique(manifest, option, value)
         case "--target": target = try unique(target, option, value)
         case "--threshold": threshold = try thresholdValue(option, value)
+        case "--provenance": provenance = try unique(provenance, option, value)
+        case "--trust-coverage": trustCoverage = try unique(trustCoverage, option, value)
+        case "--xcode-project": xcodeProject = try unique(xcodeProject, option, value)
+        case "--scheme": scheme = try unique(scheme, option, value)
+        case "--configuration": configuration = try unique(configuration, option, value)
+        case "--destination": destination = try unique(destination, option, value)
         default: throw CLIError.invalidOption(option)
         }
     }
 
     func action() throws -> CLIAction {
+        if let trustCoverage, trustCoverage != "unverified" {
+            throw CLIError.invalidValue(option: "--trust-coverage", value: trustCoverage)
+        }
+        try reject(provenance != nil && trustCoverage != nil, "choose --provenance or --trust-coverage unverified")
         guard !coverage.isEmpty else {
             throw CLIError.missingOption("--coverage")
         }
@@ -43,15 +59,32 @@ struct ParsedValues {
             missing: missing,
             threshold: threshold,
             baselineFile: baseline,
+            provenanceFile: provenance,
+            trustUnverifiedCoverage: trustCoverage == "unverified",
         )
         return .analyze(request, format)
     }
 
     private func selectionRequest() throws -> SourceSelectionRequest {
-        let selectors = [project, package, file, manifest].compactMap(\.self)
+        let selectors = [project, package, file, manifest, xcodeProject].compactMap(\.self)
         guard selectors.count == 1 else {
             throw CLIError.selection("exactly one source selector is required")
         }
+        if let xcodeProject {
+            guard let scheme, let target else { throw CLIError.missingOption("--scheme and --target") }
+            try reject(root != nil, "--root is not valid with --xcode-project")
+            return SourceSelectionRequest(
+                scope: .xcode(XcodeSelection(
+                    project: xcodeProject,
+                    scheme: scheme,
+                    target: target,
+                    configuration: configuration ?? "Debug",
+                    destination: destination ?? "platform=macOS",
+                )),
+                exclusions: exclusions,
+            )
+        }
+        try reject(scheme != nil || configuration != nil || destination != nil, "Xcode options require --xcode-project")
         if let project {
             try reject(target != nil, "--target requires --package or --sources-manifest")
             try reject(root != nil, "--root is only valid with --package or --file")

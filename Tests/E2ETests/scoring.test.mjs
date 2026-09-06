@@ -82,7 +82,8 @@ test('identical baseline permits existing debt without false regressions', async
 test('malformed coverage is never a successful gate', async () => {
     const coverage = join(fixture.directory, 'bad.json');
     await writeFile(coverage, '{broken');
-    const result = await fixture.cli(['analyze', '--file', fixture.source, '--coverage', coverage]);
+    const result = await fixture.cli(['analyze', '--file', fixture.source, '--coverage', coverage,
+        '--trust-coverage', 'unverified']);
     assert.equal(result.code, 1);
     assert.notEqual(result.stderr.trim(), '');
 });

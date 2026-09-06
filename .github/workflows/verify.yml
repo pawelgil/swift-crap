@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,7 +14,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15, ubuntu-24.04]
+        include:
+          - os: macos-15
+            swift: '6.3.1'
+          - os: ubuntu-24.04
+            swift: '6.3.1'
+          - os: macos-26
+            swift: '6.3.3'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -24,9 +31,21 @@ jobs:
         run: curl --fail --silent --show-error --location --compressed https://www.swift.org/keys/all-keys.asc | gpg --batch --import -
       - uses: swift-actions/setup-swift@364295d9c23900ce04d4e5cc708387921b4e50f9
         with:
-          swift-version: '6.3.1'
+          swift-version: ${{ matrix.swift }}
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
       - run: ./scripts/init.sh
+      - name: Record compiler and coverage toolchain
+        shell: bash
+        run: |
+          swift --version
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            xcodebuild -version
+            xcrun swiftc --version
+            xcrun llvm-cov --version
+          else
+            swiftc --version
+            llvm-cov --version
+          fi
       - run: ./scripts/verify.sh

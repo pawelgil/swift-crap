@@ -1,3 +1,5 @@
+import Foundation
+
 enum Filtering {
     case explicit
     case project
@@ -19,5 +21,13 @@ enum Filtering {
         return !path.split(separator: "/").contains { component in
             component.hasPrefix(".") || excluded.contains(String(component))
         }
+    }
+
+    func includes(file path: String) -> Bool {
+        guard case .project = self else {
+            return true
+        }
+        let name = URL(fileURLWithPath: path).lastPathComponent
+        return name != "Package.swift" && !(name.hasPrefix("Package@swift-") && name.hasSuffix(".swift"))
     }
 }

@@ -11,3 +11,11 @@ Reference: [LLVM 21.1.0 CoverageMapping.cpp](https://github.com/llvm/llvm-projec
 ## SwiftSyntax
 
 SwiftSyntax 603.0.2 is a pinned SwiftPM dependency, not copied source. Copyright Swift project contributors; Apache License 2.0 with Runtime Library Exception. Its notices and license are distributed with the dependency: [SwiftSyntax LICENSE.txt](https://github.com/swiftlang/swift-syntax/blob/603.0.2/LICENSE.txt).
+
+`ConfiguredRegions+Position.swift` adapts SwiftIfConfig's region-boundary calculation to query parser diagnostic positions. The applicable SwiftSyntax license is reproduced in [LICENSES/SwiftSyntax.txt](LICENSES/SwiftSyntax.txt); this adaptation keeps original source positions while ignoring only compiler-unparsed regions.
+
+## Swift Crypto
+
+Swift Crypto 4.5.2 supplies SHA-256. It is a pinned SwiftPM dependency under Apache License 2.0 with Runtime Library Exception: [Swift Crypto LICENSE.txt](https://github.com/apple/swift-crypto/blob/4.5.2/LICENSE.txt). Its bundled BoringSSL and other notices remain in the dependency. Swift ASN.1 1.7.2 is transitively pinned in `Package.resolved`: [Swift ASN.1 LICENSE.txt](https://github.com/apple/swift-asn1/blob/1.7.2/LICENSE.txt).
+
+Compatibility tests fetch separately licensed upstream repositories at pinned revisions. They are not incorporated into this project's production source. See the compatibility manifest and each upstream checkout's license before redistribution.

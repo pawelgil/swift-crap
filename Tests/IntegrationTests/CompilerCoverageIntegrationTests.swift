@@ -158,4 +158,39 @@ struct CompilerCoverageIntegrationTests {
         #expect(report.functions.map(\.callable.complexity) == [2, 2, 1])
         #expect(report.functions.map(\.coverage) == [1, 1, 1])
     }
+
+    @Test func `addressors match native compiler coverage`() throws {
+        let source = """
+        final class Subject {
+            let pointer: UnsafeMutablePointer<Int>
+            init(_ value: Int) {
+                pointer = .allocate(capacity: 1)
+                pointer.initialize(to: value)
+            }
+            deinit {
+                pointer.deinitialize(count: 1)
+                pointer.deallocate()
+            }
+            var value: Int {
+                unsafeAddress { UnsafePointer(pointer) }
+                unsafeMutableAddress { pointer }
+            }
+        }
+        """
+        let fixture = try CompilerFixture(
+            source: source,
+            entry: "let subject = Subject(1)\nsubject.value += 1\nprint(subject.value)",
+        )
+
+        let report = try fixture.score(inputs: [1])
+
+        let addressors = report.functions.filter { $0.callable.name.contains("unsafe") }
+        #expect(addressors.map(\.callable.name) == [
+            "Subject.value.unsafeAddress",
+            "Subject.value.unsafeMutableAddress",
+        ])
+        #expect(addressors.map(\.coverage) == [1, 1])
+        #expect(addressors.allSatisfy { $0.callable.parentID == nil })
+        #expect(addressors.allSatisfy { $0.callable.span.contains($0.callable.bodySpan.start) })
+    }
 }

@@ -149,6 +149,7 @@ test('coverage read failure names the coverage artifact', async () => {
 
     const result = await fixture.cli([
         'analyze', '--file', fixture.source, '--coverage', coverage, '--format', 'json',
+        '--trust-coverage', 'unverified',
     ]);
 
     assert.equal(result.code, 1);

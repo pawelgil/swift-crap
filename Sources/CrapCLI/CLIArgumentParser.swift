@@ -9,12 +9,14 @@ struct CLIArgumentParser {
         if command == "--version" || command == "version" {
             return .version
         }
-        guard command == "analyze" else {
+        guard command == "analyze" || command == "capture" else {
             throw CLIError.invalidOption(command)
         }
-        if arguments.dropFirst().contains("--help") || arguments.dropFirst().contains("-h") {
+        let options = arguments.dropFirst().prefix { $0 != "--" }
+        if options.contains("--help") || options.contains("-h") {
             return .help
         }
+        if command == "capture" { return try CaptureArgumentParser().parse(Array(arguments.dropFirst())) }
         return try parseAnalyze(Array(arguments.dropFirst()))
     }
 

@@ -1,11 +1,13 @@
+import SwiftIfConfig
 import SwiftSyntax
 
 final class ComplexityVisitor: SyntaxVisitor {
     private(set) var complexity = 1
+    private let configuredRegions: ConfiguredRegions?
     private let rootID: SyntaxIdentifier
 
-    static func measure(_ body: some SyntaxProtocol) -> Int {
-        let visitor = ComplexityVisitor(rootID: body.id)
+    static func measure(_ body: some SyntaxProtocol, configuredRegions: ConfiguredRegions?) -> Int {
+        let visitor = ComplexityVisitor(rootID: body.id, configuredRegions: configuredRegions)
         let syntax = Syntax(body)
         if let closure = syntax.as(ClosureExprSyntax.self) {
             visitor.walk(closure.statements)
@@ -19,12 +21,17 @@ final class ComplexityVisitor: SyntaxVisitor {
         return visitor.complexity
     }
 
-    private init(rootID: SyntaxIdentifier) {
+    private init(rootID: SyntaxIdentifier, configuredRegions: ConfiguredRegions?) {
+        self.configuredRegions = configuredRegions
         self.rootID = rootID
         super.init(viewMode: .sourceAccurate)
     }
 
     override func visit(_ node: AccessorBlockSyntax) -> SyntaxVisitorContinueKind {
+        node.id == rootID ? .visitChildren : .skipChildren
+    }
+
+    override func visit(_ node: AccessorDeclSyntax) -> SyntaxVisitorContinueKind {
         node.id == rootID ? .visitChildren : .skipChildren
     }
 
@@ -90,6 +97,21 @@ final class ComplexityVisitor: SyntaxVisitor {
 
     override func visit(_: InitializerDeclSyntax) -> SyntaxVisitorContinueKind {
         .skipChildren
+    }
+
+    override func visit(_ node: IfConfigDeclSyntax) -> SyntaxVisitorContinueKind {
+        guard let configuredRegions else {
+            for clause in node.clauses {
+                if let elements = clause.elements {
+                    walk(elements)
+                }
+            }
+            return .skipChildren
+        }
+        if let elements = configuredRegions.activeClause(for: node)?.elements {
+            walk(elements)
+        }
+        return .skipChildren
     }
 
     override func visit(_: ProtocolDeclSyntax) -> SyntaxVisitorContinueKind {

@@ -1,4 +1,5 @@
 import CrapCore
+import SwiftIfConfig
 import SwiftSyntax
 
 final class CallableCollector: SyntaxVisitor {
@@ -6,14 +7,23 @@ final class CallableCollector: SyntaxVisitor {
 
     private let file: String
     private let locations: SourceLocationConverter
+    private let configuredRegions: ConfiguredRegions?
+    private let borrowAndMutateEnabled: Bool
     private var callableContexts: [CallableContext] = []
     private var closureCounts: [String: Int] = [:]
     private var conditionalContexts: [String] = []
     private var pushedCallableNodes: Set<SyntaxIdentifier> = []
     private var typeContexts: [String] = []
 
-    init(file: String, syntax: SourceFileSyntax) {
+    init(
+        file: String,
+        syntax: SourceFileSyntax,
+        configuredRegions: ConfiguredRegions?,
+        borrowAndMutateEnabled: Bool,
+    ) {
         self.file = file
+        self.configuredRegions = configuredRegions
+        self.borrowAndMutateEnabled = borrowAndMutateEnabled
         locations = SourceLocationConverter(fileName: file, tree: syntax)
         super.init(viewMode: .sourceAccurate)
     }
@@ -112,6 +122,20 @@ final class CallableCollector: SyntaxVisitor {
         conditionalContexts.removeLast()
     }
 
+    override func visit(_ node: IfConfigDeclSyntax) -> SyntaxVisitorContinueKind {
+        guard let configuredRegions else {
+            return .visitChildren
+        }
+        if let activeClause = configuredRegions.activeClause(for: node) {
+            conditionalContexts.append(SignatureFormatter.conditionalClause(activeClause))
+            if let elements = activeClause.elements {
+                walk(elements)
+            }
+            conditionalContexts.removeLast()
+        }
+        return .skipChildren
+    }
+
     override func visit(_ node: ProtocolDeclSyntax) -> SyntaxVisitorContinueKind {
         pushType(node.name.text)
     }
@@ -129,10 +153,25 @@ final class CallableCollector: SyntaxVisitor {
     }
 
     override func visit(_ node: AccessorBlockSyntax) -> SyntaxVisitorContinueKind {
-        guard case .getter = node.accessors,
-              let owner = AccessorOwner(node: Syntax(node))
-        else {
+        guard let owner = AccessorOwner(node: Syntax(node)) else {
             return .visitChildren
+        }
+        if let recovered = recoveredHelperCall(in: node) {
+            addRecoveredGetter(node: node, owner: owner, helperBody: recovered)
+            return .skipChildren
+        }
+        guard case .getter = node.accessors else { return .visitChildren }
+        if let configuredRegions {
+            let collector = ConditionalAccessorCollector(
+                accessorBlockID: node.id,
+                configuredRegions: configuredRegions,
+                borrowAndMutateEnabled: borrowAndMutateEnabled,
+            )
+            collector.walk(node)
+            if !collector.accessors.isEmpty {
+                addConditionalAccessors(collector.accessors, owner: owner)
+                return .skipChildren
+            }
         }
         let name = qualified(owner.signature + ".getter")
         addCallable(node: owner.declaration, body: node, name: name, kind: owner.getterKind)
@@ -176,17 +215,66 @@ final class CallableCollector: SyntaxVisitor {
             kind: kind,
             span: span(of: node),
             bodySpan: span(of: body),
-            complexity: ComplexityVisitor.measure(body),
+            complexity: ComplexityVisitor.measure(body, configuredRegions: configuredRegions),
             parentID: callableContexts.last?.id,
         )
         callables.append(callable)
     }
 
+    private func addConditionalAccessors(
+        _ accessors: [(FunctionCallExprSyntax, String, [String])],
+        owner: AccessorOwner,
+    ) {
+        for (node, specifier, contexts) in accessors {
+            guard let body = node.trailingClosure, let kind = accessorKind(specifier) else { continue }
+            conditionalContexts.append(contentsOf: contexts)
+            addCallable(
+                node: node,
+                body: body,
+                name: qualified(owner.signature + "." + accessorSuffix(specifier)),
+                kind: kind(owner),
+            )
+            pushCallable(nodeID: node.id)
+            walk(body.statements)
+            popCallable(nodeID: node.id)
+            conditionalContexts.removeLast(contexts.count)
+        }
+    }
+
+    private func addRecoveredGetter(
+        node: AccessorBlockSyntax,
+        owner: AccessorOwner,
+        helperBody: CodeBlockSyntax,
+    ) {
+        let name = qualified(owner.signature + ".getter")
+        addCallable(node: owner.declaration, body: node, name: name, kind: owner.getterKind)
+        pushCallable(nodeID: node.id)
+        addCallable(node: helperBody, body: helperBody, name: nextClosureName(), kind: .closure)
+        pushCallable(nodeID: helperBody.id)
+        walk(helperBody.statements)
+        popCallable(nodeID: helperBody.id)
+        popCallable(nodeID: node.id)
+    }
+
+    private func recoveredHelperCall(in node: AccessorBlockSyntax) -> CodeBlockSyntax? {
+        guard !borrowAndMutateEnabled,
+              case let .accessors(accessors) = node.accessors,
+              accessors.count == 1,
+              let accessor = accessors.first,
+              ["borrow", "mutate"].contains(accessor.accessorSpecifier.text)
+        else { return nil }
+        return accessor.body
+    }
+
     private func accessorKind(_ specifier: String) -> ((AccessorOwner) -> CallableKind)? {
         switch specifier {
-        case "get", "_read":
+        case "borrow" where borrowAndMutateEnabled:
             { $0.getterKind }
-        case "set", "_modify":
+        case "get", "unsafeAddress", "_read":
+            { $0.getterKind }
+        case "mutate" where borrowAndMutateEnabled:
+            { $0.setterKind }
+        case "set", "unsafeMutableAddress", "_modify":
             { $0.setterKind }
         case "didSet", "willSet":
             { _ in .observer }
@@ -197,8 +285,8 @@ final class CallableCollector: SyntaxVisitor {
 
     private func accessorSuffix(_ specifier: String) -> String {
         switch specifier {
-        case "get", "_read": "getter"
-        case "set", "_modify": "setter"
+        case "get": "getter"
+        case "set": "setter"
         default: specifier
         }
     }

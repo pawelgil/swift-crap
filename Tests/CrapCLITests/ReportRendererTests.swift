@@ -29,6 +29,7 @@ struct ReportRendererTests {
 
         #expect(String(decoding: data, as: UTF8.self) == """
         metric: crap-line-v1
+        verification: library-unverified
         threshold: 30
         functions: 0
         measured: 0
@@ -36,6 +37,19 @@ struct ReportRendererTests {
         violations: 0
 
         """)
+    }
+
+    @Test func `text identifies the captured build`() throws {
+        let report = AnalysisReport(
+            functions: [],
+            summary: makeReport().summary,
+            verification: "captured",
+            buildIdentity: "abc123",
+        )
+
+        let data = try createSUT().render(report, as: .text)
+
+        #expect(String(decoding: data, as: UTF8.self).contains("build-identity: abc123\n"))
     }
 
     private func createSUT() -> ReportRenderer {

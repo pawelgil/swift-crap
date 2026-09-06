@@ -64,7 +64,7 @@ export class Fixture {
     }
 
     analyze(scope, extra = []) {
-        return this.cli(['analyze', ...scope, '--coverage', this.coverage, '--format', 'json', ...extra]);
+        return this.cli(['analyze', ...scope, '--coverage', this.coverage, '--trust-coverage', 'unverified', '--format', 'json', ...extra]);
     }
 
     async dispose() {

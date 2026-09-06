@@ -17,6 +17,8 @@ struct SwiftCrap {
             switch action {
             case let .analyze(request, format):
                 try analyze(request, format: format)
+            case let .capture(request):
+                try capture(request)
             case .help:
                 write(Data((HelpText.value + "\n").utf8), to: .standardOutput)
             case .version:
@@ -28,14 +30,79 @@ struct SwiftCrap {
         }
     }
 
+    private static func capture(_ request: CaptureRequest) throws {
+        let workflow = CaptureWorkflow(
+            artifactDigest: ArtifactDigest(),
+            commandRunner: LocalCaptureCommandRunner(),
+            contextLoader: LocalCompilerContextLoader(),
+            inventory: CaptureInventory(),
+            pathPreparer: LocalCapturePathPreparer(),
+            receiptWriter: JSONCaptureReceiptWriter(),
+            snapshot: InputSnapshot(),
+        )
+        try workflow.execute(request)
+    }
+
     private static func analyze(_ request: AnalysisRequest, format: OutputFormat) throws {
-        let useCase = AnalyzeProject(
-            sourceSelector: LocalSourceSelector(),
-            fileReader: LocalFileReader(),
-            sourceAnalyzer: SwiftSourceAnalyzer(),
+        let receipt = try receipt(for: request)
+        let buildIdentity = try receipt.map {
+            try CapturedBuildIdentity().read(receipt: $0, selection: request.selection)
+        }
+        let baseline = try BaselineTrustValidator().validate(
+            path: request.baselineFile,
+            buildIdentity: buildIdentity,
+        )
+        let result = try analysisUseCase(receipt: receipt, baseline: baseline).execute(request)
+        try revalidate(receipt, for: request)
+        let report = report(from: result, receipt: receipt, buildIdentity: buildIdentity)
+        try writeReport(report, format: format)
+    }
+
+    private static func receipt(for request: AnalysisRequest) throws -> CaptureReceipt? {
+        let receipt = try request.provenanceFile.map {
+            try ReceiptVerifier().read(at: $0, coverage: request.coverageFiles)
+        }
+        guard receipt != nil || request.trustUnverifiedCoverage else {
+            throw ProvenanceError
+                .invalid("use --provenance RECEIPT or explicitly opt in with --trust-coverage unverified")
+        }
+        return receipt
+    }
+
+    private static func analysisUseCase(
+        receipt: CaptureReceipt?,
+        baseline: ValidatedBaseline?,
+    ) -> AnalyzeProject {
+        let selector: any SourceSelecting = receipt.map { ReceiptSourceSelector(receipt: $0) } ?? LocalSourceSelector()
+        let analyzer: any SourceAnalyzing = receipt.map { CapturedSourceAnalyzer(receipt: $0) } ?? SwiftSourceAnalyzer()
+        return AnalyzeProject(
+            sourceSelector: selector,
+            fileReader: ValidatedBaselineFileReader(fileReader: XcodeCoverageFileReader(), baseline: baseline),
+            sourceAnalyzer: analyzer,
             coverageDecoder: CompilerCoverageDecoder(),
         )
-        let report = try useCase.execute(request)
+    }
+
+    private static func revalidate(_ receipt: CaptureReceipt?, for request: AnalysisRequest) throws {
+        guard let receipt, let path = request.provenanceFile else { return }
+        try ReceiptVerifier().validate(receipt, at: path, coverage: request.coverageFiles)
+    }
+
+    private static func report(
+        from result: AnalysisReport,
+        receipt: CaptureReceipt?,
+        buildIdentity: String?,
+    ) -> AnalysisReport {
+        AnalysisReport(
+            metric: result.metric,
+            functions: result.functions,
+            summary: result.summary,
+            verification: receipt == nil ? "unverified" : "captured",
+            buildIdentity: buildIdentity,
+        )
+    }
+
+    private static func writeReport(_ report: AnalysisReport, format: OutputFormat) throws {
         try write(ReportRenderer().render(report, as: format), to: .standardOutput)
         if report.summary.violations > 0 {
             terminate(2)
