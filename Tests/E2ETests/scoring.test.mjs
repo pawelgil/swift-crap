@@ -9,8 +9,12 @@ before(async () => { fixture = await Fixture.create(); });
 after(async () => { await fixture?.dispose(); });
 
 test('single-file scoring uses measured coverage and stable relative paths', async () => {
-    const result = await fixture.analyze(['--file', fixture.source, '--root', fixture.project]);
+    const result = await fixture.analyze(
+        ['--file', fixture.source, '--root', fixture.project],
+        ['--missing', 'zero'],
+    );
     assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.stderr, '');
     const report = JSON.parse(result.stdout);
     assert.equal(report.metric, 'crap-line-v1');
     assert.equal(report.functions.length, 2);
@@ -59,6 +63,7 @@ test('explicit manifest selects a target for other build systems', async () => {
 test('threshold violation produces JSON and exit two', async () => {
     const result = await fixture.analyze(['--file', fixture.source], ['--threshold', '1']);
     assert.equal(result.code, 2, result.stderr);
+    assert.equal(result.stderr, '');
     assert.equal(JSON.parse(result.stdout).summary.violations, 2);
 });
 
@@ -86,18 +91,73 @@ test('malformed coverage is never a successful gate', async () => {
         '--trust-coverage', 'unverified']);
     assert.equal(result.code, 1);
     assert.notEqual(result.stderr.trim(), '');
+    assert.doesNotMatch(result.stderr, /assumed-zero coverage/);
 });
 
-test('missing required coverage fails and zero must be explicit', async () => {
-    const path = join(fixture.directory, 'Unbuilt.swift');
+test('strict missing coverage explains compiler coverage limitations', async () => {
+    const path = join(fixture.directory, 'StrictMissing.swift');
     await writeFile(path, 'func unbuilt() -> Int { 42 }\n');
-    const missing = await fixture.analyze(['--file', path]);
-    assert.equal(missing.code, 1);
+
+    const result = await fixture.analyze(['--file', path]);
+
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout, '');
+    assert.match(result.stderr, /^Missing coverage for source callable .*StrictMissing\.swift.*\.\nhint: Missing records may result from compiler omission or incomplete build\/coverage inputs\. See https:\/\/github\.com\/pawelgil\/swift-crap#missing-compiler-coverage\n$/);
+    assert.doesNotMatch(result.stderr, /warning:/);
+});
+
+test('assumed zero JSON remains parseable and warns', async () => {
+    const path = await writeUnbuiltSource('AssumedJSON.swift');
+
     const assumed = await fixture.analyze(['--file', path], ['--missing', 'zero']);
+
     assert.equal(assumed.code, 0, assumed.stderr);
+    assert.equal(assumed.stderr, assumedZeroWarning(1));
     const score = JSON.parse(assumed.stdout).functions[0];
     assert.equal(score.coverageStatus, 'assumedZero');
     assert.equal(score.crap, 2);
+});
+
+test('assumed zero text warns without changing stdout', async () => {
+    const path = await writeUnbuiltSource('AssumedText.swift');
+
+    const result = await fixture.cli(['analyze', '--file', path, '--coverage', fixture.coverage,
+        '--trust-coverage', 'unverified', '--format', 'text', '--missing', 'zero']);
+
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stdout, /^metric: crap-line-v1\n/);
+    assert.match(result.stdout, /assumed: 1\n/);
+    assert.match(result.stdout, /status=assumedZero\n$/);
+    assert.equal(result.stderr, assumedZeroWarning(1));
+});
+
+test('assumed zero warning survives threshold gate failure', async () => {
+    const path = await writeUnbuiltSource('AssumedViolation.swift');
+
+    const result = await fixture.analyze(['--file', path], ['--missing', 'zero', '--threshold', '1']);
+
+    assert.equal(result.code, 2, result.stderr);
+    assert.equal(JSON.parse(result.stdout).summary.violations, 1);
+    assert.equal(result.stderr, assumedZeroWarning(1));
+});
+
+test('assumed zero warning survives a baseline pass', async () => {
+    const path = await writeUnbuiltSource('AssumedBaseline.swift');
+    const initial = await fixture.analyze(['--file', path], ['--missing', 'zero', '--threshold', '1']);
+    const baseline = join(fixture.directory, 'assumed-baseline.json');
+
+    assert.equal(initial.code, 2, initial.stderr);
+    assert.equal(initial.stderr, assumedZeroWarning(1));
+    await writeFile(baseline, initial.stdout);
+
+    const result = await fixture.analyze(
+        ['--file', path],
+        ['--missing', 'zero', '--threshold', '1', '--baseline', baseline]
+    );
+
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).summary.violations, 0);
+    assert.equal(result.stderr, assumedZeroWarning(1));
 });
 
 test('analysis leaves source bytes unchanged', async () => {
@@ -120,3 +180,14 @@ test('invalid numeric threshold is an input error', async () => {
     const result = await fixture.analyze(['--file', fixture.source], ['--threshold', 'nan']);
     assert.equal(result.code, 1);
 });
+
+function assumedZeroWarning(count) {
+    const label = count === 1 ? 'function' : 'functions';
+    return `warning: assumed-zero coverage affects ${count} ${label}; affected scores assume zero coverage and are NOT measured. Missing records may result from compiler omission or incomplete build/coverage inputs. See https://github.com/pawelgil/swift-crap#missing-compiler-coverage\n`;
+}
+
+async function writeUnbuiltSource(name) {
+    const path = join(fixture.directory, name);
+    await writeFile(path, 'func unbuilt() -> Int { 42 }\n');
+    return path;
+}

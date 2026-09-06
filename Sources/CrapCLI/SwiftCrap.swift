@@ -25,7 +25,7 @@ struct SwiftCrap {
                 write(Data("swift-crap 1.0.0\n".utf8), to: .standardOutput)
             }
         } catch {
-            write(Data((message(for: error) + "\n").utf8), to: .standardError)
+            writeDiagnostic(CLIDiagnosticFormatter().message(for: error))
             terminate(1)
         }
     }
@@ -109,24 +109,16 @@ struct SwiftCrap {
 
     private static func writeReport(_ report: AnalysisReport, format: OutputFormat) throws {
         try write(ReportRenderer().render(report, as: format), to: .standardOutput)
+        if let warning = CLIDiagnosticFormatter().warning(for: report) {
+            writeDiagnostic(warning)
+        }
         if report.summary.violations > 0 {
             terminate(2)
         }
     }
 
-    private static func message(for error: Error) -> String {
-        if let error = error as? AnalysisFailure {
-            switch error {
-            case let .invalidBaseline(path): return "invalid baseline: \(path)"
-            case let .invalidCoverage(file, reason): return "invalid coverage \(file): \(reason)"
-            case let .invalidSource(file, reason): return "invalid source \(file): \(reason)"
-            case let .invalidSourceEncoding(path): return "source is not UTF-8: \(path)"
-            case .noCallables: return "no callable inventory"
-            case .noCoverageFiles: return "no coverage files"
-            case .noSources: return "no usable sources"
-            }
-        }
-        return String(describing: error)
+    private static func writeDiagnostic(_ diagnostic: String) {
+        write(Data((diagnostic + "\n").utf8), to: .standardError)
     }
 
     private static func write(_ data: Data, to handle: FileHandle) {

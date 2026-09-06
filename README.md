@@ -92,9 +92,46 @@ Identity is deliberately conservative and machine-local: changed SDK, compiler o
 
 Missing coverage is an error. `--missing zero` explicitly labels absent observations `assumedZero`; it never claims instrumentation. Actual zero execution is `measured`. Generic or compiler-unemitted functions can lack records even after a complete test run. Package-wide tests may also leave executable/example targets uninstrumented.
 
+The CLI writes a warning to stderr when a report contains assumed-zero scores, for both JSON and text output. Warnings do not change the selected gate policy or exit code. JSON on stdout remains machine-readable; retain stderr alongside saved reports. Machine consumers can identify affected functions through `coverageStatus: "assumedZero"` and `summary.assumedFunctions`.
+
 Repeated LLVM artifacts union execution only when owned executable-line universes match. Nonidentical aggregate-only xccov observations cannot establish a union and are rejected.
 
 JSON includes `schemaVersion`, `metric`, `verification`, optional `buildIdentity`, `functions` and `summary`. Each function contains identity, location, complexity, counts, fraction, CRAP and coverage status. Ordering is stable; reports omit timestamps. The library leaves verification and build identity absent unless its caller supplies them.
+
+## Missing compiler coverage
+
+Some code can run during tests without the Swift compiler producing a coverage record that belongs to that authored function. For example, an `@Observable` property's `didSet` can execute and change state while its own coverage record is absent. This is different from a recorded function that ran zero times: the former is unknown; the latter has measured zero coverage.
+
+Our native fixtures also demonstrate gaps for authored closures inside `#Preview` and unavailable initializers. These examples are not an exhaustive list, and not every observer or macro use is affected. Macros can move or replace authored code, including in custom macros; a missing record alone does not establish the cause. Swift tracks missing instrumentation for attached macros in [issue #91304](https://github.com/swiftlang/swift/issues/91304); a [compiler maintainer confirms the limitation](https://github.com/swiftlang/swift/issues/91304#issuecomment-5209795589).
+
+`swift-crap` scores only the functions and closures you wrote. It does not score hidden macro-generated machinery, borrow a neighboring function's coverage, or reconstruct missing execution from a passing test. It cannot promise a fully measured CRAP report when the compiler omits records. No patched compiler is required or bundled.
+
+### What you can do
+
+1. Check that coverage was enabled, the selected target was built and included in the coverage artifacts, and the inputs match the source. Recapture after changes. Missing coverage can be a build/input problem, not just a compiler limitation.
+2. Where it makes the code clearer, move substantial observer or macro-argument logic into an ordinary authored helper. Keep the helper outside the code being replaced by a macro. For example:
+
+   ```swift
+   import Observation
+
+   @Observable
+   final class Counter {
+       var value = 0 {
+           didSet { valueDidChange(from: oldValue) }
+       }
+       private(set) var changeCount = 0
+
+       private func valueDidChange(from oldValue: Int) {
+           guard value != oldValue else { return }
+           changeCount += 1
+       }
+   }
+   ```
+
+   Test this by assigning `value` and checking `changeCount`, including unchanged and changed values. That exercises the observer-to-helper connection, not just the helper in isolation. Ordinary helpers can receive their own measured coverage and CRAP scores. The small `didSet` body may still have no record: this reduces the unmeasured logic; it does **not** repair the compiler gap or make a strict whole-project analysis pass. A helper transformed by another macro may encounter the same limitation.
+3. Keep the default `--missing error` for gates that require complete measured evidence. For exploration, `--missing zero` produces a report with explicit assumptions and a warning; it does not recover coverage. A passing gate under that policy can still contain unknown coverage. An intentionally narrower file/target scope can help inspect measurable code, but is not a full-project result.
+
+Do not remove useful tests, change behavior, or exclude difficult code just to make a score look complete. If a function is deliberately unavailable, accepting that its coverage is missing may be the appropriate outcome.
 
 ## Engine libraries
 
