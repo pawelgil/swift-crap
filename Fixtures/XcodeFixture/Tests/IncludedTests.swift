@@ -1,11 +1,11 @@
 import Testing
 @testable import XcodeFixture
 
-@Test func `included returns one`() {
+@Test func includedReturnsOne() {
     #expect(included(true) == 1)
     #expect(configuration() == "debug")
 }
 
-@Test func `selects first closure`() {
+@Test func selectsFirstClosure() {
     #expect(selectClosure(true) == 1)
 }

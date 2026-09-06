@@ -44,7 +44,7 @@ struct XcodeCoverageCompactorTests {
         let retained = try #require((unit["functions"] as? [[String: Any]])?.first)
         let coverage = try CompilerCoverageDecoder().decode(result)
 
-        #expect((retained as NSDictionary).isEqual(to: expected))
+        #expect(try encoded(retained) == encoded(expected))
         #expect(try filenames(in: unit) == [fixture.selected.path])
         #expect(coverage.records.contains { record in
             record.file == fixture.selected.path && record.name == "shared()"
@@ -186,6 +186,10 @@ struct XcodeCoverageCompactorTests {
         let document = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let units = try #require(document["data"] as? [[String: Any]])
         return try #require(units.first)
+    }
+
+    private func encoded(_ value: Any) throws -> Data {
+        try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
     }
 
     private func filenames(in unit: [String: Any]) throws -> [String] {
