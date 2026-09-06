@@ -10,7 +10,7 @@ A receipt is a local, unsigned record, not a security attestation. The command, 
 
 ## Compiler contexts
 
-SwiftPM contexts come from its actual `description.json` Swift compiler commands, including target sources, defines, language mode, SDK and import paths. Xcode contexts come from the resolved indexing graph under the same command's project, scheme, configuration, destination and compiler-setting overrides. Captured products remain available while compiler conditional queries run.
+SwiftPM contexts come from its actual `description.json` Swift compiler commands, including module name, target sources, defines, language mode, SDK and import paths. Module name is semantic: `canImport(CurrentModule)` can depend on it. Xcode contexts come from the resolved indexing graph under the same command's project, scheme, configuration and destination. The compiler is selected from that target's resolved `SWIFT_EXEC` or `TOOLCHAIN_DIR`, preserving explicit overrides; supplemental toolchains such as Metal are not mistaken for competing Swift compilers. Captured products remain available while compiler conditional queries run.
 
 SwiftIfConfig evaluates the parsed conditional structure. A compiler-backed configuration answers conditions such as `os`, `arch`, `canImport`, `swift`, `compiler`, `hasFeature` and custom defines using that context. Parser experimental features are enabled only when confirmed by the compiler. Invalid active syntax is rejected; syntax in regions the compiler deliberately leaves unparsed is not treated as active source. Complexity and callable discovery share the same active regions.
 

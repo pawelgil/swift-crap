@@ -26,7 +26,7 @@ struct XcodeProjectDescriber: XcodeProjectDescribing {
             matching: selection,
             workingDirectory: workingDirectory,
         )
-        try requireSingleArchitecture(
+        let settings = try buildSettings(
             selection,
             buildArguments: buildArguments,
             workingDirectory: workingDirectory,
@@ -34,6 +34,7 @@ struct XcodeProjectDescriber: XcodeProjectDescribing {
         return try describe(
             selection,
             buildArguments: buildArguments,
+            compiler: compiler(buildSettings: settings),
             workingDirectory: workingDirectory,
         )
     }
@@ -41,6 +42,7 @@ struct XcodeProjectDescriber: XcodeProjectDescribing {
     private func describe(
         _ selection: XcodeSelection,
         buildArguments: [String],
+        compiler: String,
         workingDirectory: String? = nil,
     ) throws -> XcodeProjectMetadata {
         let data = try output(
@@ -49,7 +51,7 @@ struct XcodeProjectDescriber: XcodeProjectDescribing {
             queryArguments: ["-showBuildSettingsForIndex", "-json"],
             workingDirectory: workingDirectory,
         )
-        return try decode(data, target: selection.target)
+        return try decode(data, target: selection.target, compiler: compiler)
     }
 
     private func output(
@@ -94,11 +96,11 @@ struct XcodeProjectDescriber: XcodeProjectDescribing {
         ] + buildArguments + queryArguments
     }
 
-    private func requireSingleArchitecture(
+    private func buildSettings(
         _ selection: XcodeSelection,
         buildArguments: [String],
         workingDirectory: String?,
-    ) throws {
+    ) throws -> [String: String] {
         let data = try output(
             selection,
             buildArguments: buildArguments,
@@ -125,6 +127,7 @@ struct XcodeProjectDescriber: XcodeProjectDescribing {
                 "capture builds multiple architectures (\(names)); select one destination architecture",
             )
         }
+        return settings
     }
 
     private func builtArchitectures(_ settings: [String: String], destination: String) -> Set<String> {
@@ -154,11 +157,11 @@ struct XcodeProjectDescriber: XcodeProjectDescribing {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    func decode(_ data: Data, target: String) throws -> XcodeProjectMetadata {
+    func decode(_ data: Data, target: String, compiler: String) throws -> XcodeProjectMetadata {
         let document = try sourceDocument(data)
         let swiftEntries = try swiftEntries(document, target: target)
         let sourceFiles = swiftEntries.keys.sorted()
-        let contexts = try compilerContexts(entries: swiftEntries, sourceFiles: sourceFiles)
+        let contexts = try compilerContexts(entries: swiftEntries, sourceFiles: sourceFiles, compiler: compiler)
         return XcodeProjectMetadata(sourceFiles: sourceFiles, compilerContexts: contexts)
     }
 
@@ -193,9 +196,9 @@ struct XcodeProjectDescriber: XcodeProjectDescribing {
     private func compilerContexts(
         entries: [String: XcodeSourceMetadata],
         sourceFiles: [String],
+        compiler: String,
     ) throws -> [CompilerContext] {
         var contexts: [CompilerContext] = []
-        var compilers: [String: String] = [:]
         let sourceSet = Set(sourceFiles)
         for source in sourceFiles {
             guard let metadata = entries[source] else {
@@ -207,26 +210,11 @@ struct XcodeProjectDescriber: XcodeProjectDescribing {
             guard let moduleName = metadata.swiftASTModuleName, !moduleName.isEmpty else {
                 throw SourceSelectionError.invalidXcodeMetadata("source \(source) has no Swift module name")
             }
-            guard let toolchains = metadata.toolchains, !toolchains.isEmpty else {
-                throw SourceSelectionError.invalidXcodeMetadata("source \(source) has no toolchain")
-            }
-            guard toolchains.count == 1, let toolchain = toolchains.first else {
-                throw SourceSelectionError.invalidXcodeMetadata(
-                    "source \(source) has ambiguous toolchains: \(toolchains.joined(separator: ", "))",
-                )
-            }
             guard let directory = value(after: "-working-directory", in: arguments) else {
                 throw SourceSelectionError.invalidXcodeMetadata("source \(source) has no working directory")
             }
-            let compilerPath: String
-            if let resolved = compilers[toolchain] {
-                compilerPath = resolved
-            } else {
-                compilerPath = try compiler(toolchain: toolchain)
-                compilers[toolchain] = compilerPath
-            }
             let context = CompilerContext(
-                compiler: compilerPath,
+                compiler: compiler,
                 arguments: arguments,
                 directory: directory,
                 sources: arguments.filter(sourceSet.contains),
@@ -250,25 +238,32 @@ struct XcodeProjectDescriber: XcodeProjectDescribing {
         return valueIndex < arguments.endIndex ? arguments[valueIndex] : nil
     }
 
-    private func compiler(toolchain: String) throws -> String {
-        let capture = try CaptureFiles()
-        defer { capture.remove() }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-        process.arguments = ["--toolchain", toolchain, "--find", "swiftc"]
-        process.standardOutput = capture.output
-        process.standardError = capture.error
-        try process.run()
-        process.waitUntilExit()
-        capture.close()
-        guard process.terminationStatus == 0 else {
-            throw try SourceSelectionError.xcodeDescription(errorMessage(capture))
+    func compiler(buildSettings: [String: String]) throws -> String {
+        if let swiftCompiler = nonempty(buildSettings["SWIFT_EXEC"]) {
+            return try compiler(path: swiftCompiler, setting: "SWIFT_EXEC")
         }
-        let path = try String(decoding: capture.outputData(), as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !path.isEmpty else {
-            throw SourceSelectionError.invalidXcodeMetadata("xcrun returned an empty Swift compiler path")
+        guard let toolchain = nonempty(buildSettings["TOOLCHAIN_DIR"]) else {
+            throw SourceSelectionError.invalidXcodeMetadata("target has no SWIFT_EXEC or TOOLCHAIN_DIR")
         }
-        return path
+        guard toolchain.hasPrefix("/") else {
+            throw SourceSelectionError
+                .invalidXcodeMetadata("TOOLCHAIN_DIR does not identify an executable Swift compiler")
+        }
+        return try compiler(
+            path: URL(fileURLWithPath: toolchain, isDirectory: true).appendingPathComponent("usr/bin/swiftc").path,
+            setting: "TOOLCHAIN_DIR",
+        )
+    }
+
+    private func compiler(path: String, setting: String) throws -> String {
+        guard path.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: path) else {
+            throw SourceSelectionError.invalidXcodeMetadata("\(setting) does not identify an executable Swift compiler")
+        }
+        return try CanonicalPath().resolvePreservingLastComponent(path)
+    }
+
+    private func nonempty(_ value: String?) -> String? {
+        guard let value, !value.isEmpty else { return nil }
+        return value
     }
 }

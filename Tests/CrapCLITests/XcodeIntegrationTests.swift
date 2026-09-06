@@ -46,6 +46,25 @@ import Testing
             #expect(try CompilerProbe(context: context).evaluate("canImport(XcodeFixture)"))
         }
 
+        @Test func `matching build context uses resolved Swift compiler override`() throws {
+            let fixture = try XcodeFixture()
+            let swiftCompiler = try fixture.makeSwiftCompilerWrapper()
+            let resultBundle = try fixture.test(swiftCompiler: swiftCompiler)
+
+            let metadata = try XcodeProjectDescriber().describe(
+                fixture.selection,
+                matchingXcodebuildCommand: fixture.testCommand(
+                    resultBundle: resultBundle,
+                    swiftCompiler: swiftCompiler,
+                ),
+                workingDirectory: XcodeFixture.fixtureRoot.path,
+            )
+
+            let context = try #require(metadata.compilerContexts.first)
+            #expect(context.compiler == swiftCompiler)
+            #expect(try CompilerProbe(context: context).evaluate("canImport(XcodeFixture)"))
+        }
+
         @Test func `universal build context fails closed`() throws {
             let fixture = try XcodeFixture()
             let resultBundle = fixture.directory.appendingPathComponent("Universal.xcresult", isDirectory: true)
@@ -84,14 +103,35 @@ import Testing
             try? FileManager.default.removeItem(at: directory)
         }
 
-        func test() throws -> URL {
+        func makeSwiftCompilerWrapper() throws -> String {
+            let wrapper = directory.appendingPathComponent("SelectedToolchain/usr/bin/swiftc")
+            let libraries = directory.appendingPathComponent("SelectedToolchain/usr/lib")
+            try FileManager.default.createDirectory(
+                at: wrapper.deletingLastPathComponent(),
+                withIntermediateDirectories: true,
+            )
+            let toolchain = try String(decoding: run("--show-toolchain-path", []), as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            try FileManager.default.createSymbolicLink(
+                at: libraries,
+                withDestinationURL: URL(fileURLWithPath: toolchain).appendingPathComponent("usr/lib"),
+            )
+            try Data("#!/bin/sh\nexec /usr/bin/xcrun swiftc \"$@\"\n".utf8).write(to: wrapper)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: wrapper.path)
+            return wrapper.path
+        }
+
+        func test(swiftCompiler: String? = nil) throws -> URL {
             let resultBundle = directory.appendingPathComponent("Tests.xcresult", isDirectory: true)
-            _ = try run("xcodebuild", Array(testCommand(resultBundle: resultBundle).dropFirst()))
+            _ = try run("xcodebuild", Array(testCommand(
+                resultBundle: resultBundle,
+                swiftCompiler: swiftCompiler,
+            ).dropFirst()))
             return resultBundle
         }
 
-        func testCommand(resultBundle: URL) -> [String] {
-            [
+        func testCommand(resultBundle: URL, swiftCompiler: String? = nil) -> [String] {
+            var arguments = [
                 "xcodebuild",
                 "-project", project.path,
                 "-scheme", "XcodeFixture",
@@ -100,8 +140,12 @@ import Testing
                 "-derivedDataPath", directory.appendingPathComponent("DerivedData").path,
                 "-resultBundlePath", resultBundle.path,
                 "-enableCodeCoverage", "YES",
-                "test",
             ]
+            if let swiftCompiler {
+                arguments.append("SWIFT_EXEC=\(swiftCompiler)")
+            }
+            arguments.append("test")
+            return arguments
         }
 
         func nativeCoverage(resultBundle: URL) throws -> XcodeNativeCoverage {

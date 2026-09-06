@@ -21,6 +21,8 @@ Build a standalone source-level Swift CRAP engine and CLI with project, package,
 - Xcode: use resolved target membership, preserve synchronized-folder exceptions, reject multi-architecture ambiguity and bind the exact selector to the captured inventory. Exercise real XCTest result bundles.
 - Baseline trust: require captured status and an exact build identity; reuse the same validated bytes during scoring. Do not bind source inventories or output artifacts into identity, since baselines must survive source evolution.
 - Repository reality: preserve failed upstream attempts, compare manually counted decisions with native per-function coverage and keep missing compiler records distinct from measured zero execution.
+- Hosted portability: replace macOS-only temporary-path assumptions with real portable symlink fixtures, keep the native Xcode fixture compatible with its bundled compiler, and resolve the actual Swift compiler from target build settings rather than rejecting supplemental Metal toolchains.
+- Module semantics: retain SwiftPM's module name in compiler arguments; a native counterexample and executable capture test prove that omitting it changes `canImport(CurrentModule)`.
 
 Each accepted behavior is covered by a focused regression test. The complete local and CI gate is `./scripts/verify.sh`.
 
