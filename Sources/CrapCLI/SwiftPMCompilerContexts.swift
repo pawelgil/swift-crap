@@ -10,7 +10,7 @@ struct SwiftPMCompilerContexts {
         return description.swiftCommands.values.sorted { $0.moduleName < $1.moduleName }.map {
             CompilerContext(
                 compiler: $0.executable,
-                arguments: ["-I", $0.importPath] + $0.otherArguments,
+                arguments: ["-module-name", $0.moduleName, "-I", $0.importPath] + $0.otherArguments,
                 directory: root,
                 sources: $0.sources,
                 moduleName: $0.moduleName,

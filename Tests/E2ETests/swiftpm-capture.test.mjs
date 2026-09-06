@@ -51,7 +51,7 @@ test('native SwiftPM capture preserves active target semantics across selectors'
         assert.equal(report.summary.assumedFunctions, 0);
         assert.equal(report.functions[0].callable.complexity, 2);
         assert.equal(report.functions[0].coverage, 1);
-        assert.match(report.functions[0].callable.id, /#if AUDIT_ACTIVE/);
+        assert.match(report.functions[0].callable.id, /#if canImport\(Logic\) && AUDIT_ACTIVE/);
     }
 });
 
@@ -90,7 +90,7 @@ let package = Package(name: "CaptureFixture", products: [
 `;
 
 const logic = `public enum Decision {
-#if AUDIT_ACTIVE
+#if canImport(Logic) && AUDIT_ACTIVE
     public static func choose(_ value: Int) -> String {
         if value > 0 {
             return "positive"
