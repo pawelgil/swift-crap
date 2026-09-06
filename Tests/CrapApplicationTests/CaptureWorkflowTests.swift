@@ -1,5 +1,6 @@
 import CrapApplication
 import CrapCore
+import Foundation
 import Testing
 
 struct CaptureWorkflowTests {
@@ -52,6 +53,20 @@ struct CaptureWorkflowTests {
         }
     }
 
+    @Test func `artifact changed while exporting writes no receipt`() {
+        let writer = SpyReceiptWriter()
+        let sut = createSUT(
+            artifactDigest: ArtifactDigestSequence(values: ["before", "after"]),
+            coverageExporter: StubCoverageExporter(exports: ["/repo/coverage.json": Data("native evidence".utf8)]),
+            receiptWriter: writer,
+        )
+
+        #expect(throws: CaptureFailure.invalidRequest("coverage artifacts changed during capture")) {
+            try sut.execute(makeRequest())
+        }
+        #expect(writer.receipt == nil)
+    }
+
     @Test func `missing coverage artifact rejects capture`() {
         let sut = createSUT(artifactDigest: ThrowingArtifactDigest())
 
@@ -75,10 +90,51 @@ struct CaptureWorkflowTests {
         #expect(writer.path == "/repo/receipt.json")
     }
 
+    @Test func `successful capture preserves exported coverage bytes`() throws {
+        let writer = SpyReceiptWriter()
+        let exports = ["/repo/coverage.json": Data("native evidence".utf8)]
+        let sut = createSUT(coverageExporter: StubCoverageExporter(exports: exports), receiptWriter: writer)
+
+        try sut.execute(makeRequest())
+
+        #expect(writer.receipt?.coverageExports == exports)
+    }
+
+    @Test func `failed coverage export writes no receipt`() {
+        let writer = SpyReceiptWriter()
+        let sut = createSUT(coverageExporter: ThrowingCoverageExporter(), receiptWriter: writer)
+
+        #expect(throws: TestError.failed) { try sut.execute(makeRequest()) }
+        #expect(writer.receipt == nil)
+    }
+
+    @Test func `export for undeclared artifact writes no receipt`() {
+        let writer = SpyReceiptWriter()
+        let exports = ["/other/coverage.json": Data("unbound evidence".utf8)]
+        let sut = createSUT(coverageExporter: StubCoverageExporter(exports: exports), receiptWriter: writer)
+
+        #expect(throws: CaptureFailure.invalidRequest("coverage exports must belong to declared artifacts")) {
+            try sut.execute(makeRequest())
+        }
+        #expect(writer.receipt == nil)
+    }
+
+    @Test func `empty coverage export writes no receipt`() {
+        let writer = SpyReceiptWriter()
+        let exports = ["/repo/coverage.json": Data()]
+        let sut = createSUT(coverageExporter: StubCoverageExporter(exports: exports), receiptWriter: writer)
+
+        #expect(throws: CaptureFailure.invalidRequest("coverage export is empty")) {
+            try sut.execute(makeRequest())
+        }
+        #expect(writer.receipt == nil)
+    }
+
     private func createSUT(
         artifactDigest: any CaptureArtifactDigesting = StubArtifactDigest(),
         commandRunner: any CaptureCommandRunning = StubCommandRunner(),
         contextLoader: any CompilerContextLoading = StubContextLoader(),
+        coverageExporter: (any CaptureCoverageExporting)? = nil,
         inventory: any CallableInventoryCapturing = StubInventory(),
         pathPreparer: any CapturePathPreparing = StubPathPreparer(),
         receiptWriter: any CaptureReceiptWriting = SpyReceiptWriter(),
@@ -88,6 +144,7 @@ struct CaptureWorkflowTests {
             artifactDigest: artifactDigest,
             commandRunner: commandRunner,
             contextLoader: contextLoader,
+            coverageExporter: coverageExporter,
             inventory: inventory,
             pathPreparer: pathPreparer,
             receiptWriter: receiptWriter,
@@ -108,6 +165,24 @@ struct CaptureWorkflowTests {
     }
 }
 
+private struct StubCoverageExporter: CaptureCoverageExporting {
+    let exports: [String: Data]
+
+    func read(request _: CaptureRequest, paths _: CapturePaths, contexts _: [CompilerContext]) -> [String: Data] {
+        exports
+    }
+}
+
+private struct ThrowingCoverageExporter: CaptureCoverageExporting {
+    func read(
+        request _: CaptureRequest,
+        paths _: CapturePaths,
+        contexts _: [CompilerContext],
+    ) throws -> [String: Data] {
+        throw TestError.failed
+    }
+}
+
 private enum TestError: Error {
     case failed
 }
@@ -121,6 +196,18 @@ private struct StubArtifactDigest: CaptureArtifactDigesting {
 private struct ThrowingArtifactDigest: CaptureArtifactDigesting {
     func read(at _: String) throws -> String {
         throw TestError.failed
+    }
+}
+
+private final class ArtifactDigestSequence: CaptureArtifactDigesting {
+    private var values: [String]
+
+    init(values: [String]) {
+        self.values = values
+    }
+
+    func read(at _: String) -> String {
+        values.removeFirst()
     }
 }
 

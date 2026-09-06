@@ -50,6 +50,37 @@ struct ReceiptSourceSelectorTests {
         #expect(result.files.isEmpty)
     }
 
+    @Test func `captured Xcode selection omits generated compiler sources outside root`() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let generated = FileManager.default.temporaryDirectory.appendingPathComponent("Generated-\(UUID()).swift")
+        defer { try? FileManager.default.removeItem(at: generated) }
+        try Data("func generated() {}".utf8).write(to: generated)
+        let context = CompilerContext(
+            compiler: "/compiler",
+            arguments: [],
+            directory: fixture.root.path,
+            sources: [fixture.source.path, generated.path],
+            moduleName: "App",
+        )
+        let receipt = CaptureReceipt(
+            schemaVersion: fixture.receipt.schemaVersion,
+            metric: fixture.receipt.metric,
+            root: fixture.receipt.root,
+            command: fixture.receipt.command,
+            inputs: fixture.receipt.inputs,
+            artifacts: fixture.receipt.artifacts,
+            contexts: [context],
+            callables: fixture.receipt.callables,
+            xcode: fixture.selection,
+        )
+
+        let result = try ReceiptSourceSelector(receipt: receipt)
+            .select(SourceSelectionRequest(scope: .xcode(fixture.selection)))
+
+        #expect(result.files.map(\.relativePath) == ["Included.swift"])
+    }
+
     @Test func `Xcode selection requires captured Xcode identity`() throws {
         let fixture = try makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }

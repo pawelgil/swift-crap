@@ -22,6 +22,8 @@ SwiftSyntax preserves authored declarations and exact UTF-8 source positions. It
 
 Compiler coverage remains the authority for observed execution. LLVM function records preserve ownership even for same-line callables. Xcode function aggregates need stricter matching because their source anchors lack columns. Ambiguity is an analysis failure.
 
+Xcode capture preserves precise LLVM bytes through the application-layer `CaptureCoverageExporting` capability. The CLI adapter obtains and validates native evidence; the receipt stores it under the corresponding result-bundle artifact. Analysis reads those frozen bytes through a file-reader decorator after provenance validation. The core matcher remains unchanged, and legacy aggregate inputs retain their ambiguity checks.
+
 LLVM line coverage is reconstructed from per-function regions using the upstream segment and line-stat algorithms. The implementation follows LLVM's [SegmentBuilder](https://github.com/llvm/llvm-project/blob/llvmorg-21.1.0/llvm/lib/ProfileData/Coverage/CoverageMapping.cpp) and [LineCoverageStats](https://github.com/llvm/llvm-project/blob/llvmorg-21.1.0/llvm/lib/ProfileData/Coverage/CoverageMapping.cpp), with the data model grounded in the [source-based coverage documentation](https://clang.llvm.org/docs/SourceBasedCodeCoverage.html). This preserves LLVM's ordering, region combination, gap, skipped-region, wrapped-segment, and maximum region-entry count semantics instead of approximating covered lines from overlapping source ranges.
 
 ## Reproducibility
@@ -32,6 +34,6 @@ The explicit capture use case snapshots inputs before executing a supplied build
 
 ## Scope decisions
 
-A project is a source tree, a package is SwiftPM membership, a package target is exact target membership, and a file is explicit selection. Xcode uses its resolved indexing build graph and captures the exact selector/membership. Other build systems can provide target source and compiler-context manifests. This keeps build-system assumptions in adapters and makes the selected files reviewable.
+A project is a source tree, a package is SwiftPM membership, a package target is exact target membership, and a file is explicit selection. Xcode capture uses actual result-bundle compiler invocations and records the exact selector/membership; standalone unverified selection uses its resolved indexing build graph. Other build systems can provide target source and compiler-context manifests. This keeps build-system assumptions in adapters and makes the selected files reviewable.
 
 The CLI provides deterministic JSON and text. SwiftIfConfig evaluates active branches using compiler-confirmed conditions and parser features. Source positions remain unchanged. Macro expansion, SARIF and compiler-USR enrichment are not claimed capabilities; those do not silently alter the authored-source metric.

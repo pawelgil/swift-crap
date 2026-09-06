@@ -54,6 +54,22 @@ struct XcodeBuildCommandTests {
         #expect(result.isEmpty)
     }
 
+    @Test func `result bundle resolves from command working directory`() throws {
+        let result = try XcodeBuildCommand().resultBundlePath([
+            "xcodebuild", "-resultBundlePath", "Build/Tests.xcresult", "test",
+        ], workingDirectory: "/project")
+
+        #expect(result == "/project/Build/Tests.xcresult")
+    }
+
+    @Test func `missing result bundle is rejected`() {
+        #expect(throws: SourceSelectionError.xcodeCommand(
+            "capture command must provide exactly one -resultBundlePath",
+        )) {
+            try XcodeBuildCommand().resultBundlePath(["xcodebuild", "test"])
+        }
+    }
+
     @Test func `shell wrapper is rejected`() {
         let selection = makeSelection()
         let sut = XcodeBuildCommand()

@@ -62,7 +62,7 @@ swift-crap analyze --file /path/to/project/Sources/Feature.swift --coverage cove
 
 Project mode excludes build, dependency, hidden and test directories, plus SwiftPM manifests. Repeated `--exclude PREFIX` applies root-relative component prefixes. Package/target modes use SwiftPM membership, including custom paths and exclusions. Explicit file selection can include tests. Captured analyses retain the receipt's root for identities across narrower scopes.
 
-Xcode target membership comes from Xcode's resolved indexing build graph, including synchronized folders and membership exceptions:
+Captured Xcode target membership comes from the selected target's actual compiler invocation, including synchronized folders and membership exceptions:
 
 ```sh
 swift-crap analyze --xcode-project /path/App.xcodeproj --scheme App --target App \
@@ -70,7 +70,7 @@ swift-crap analyze --xcode-project /path/App.xcodeproj --scheme App --target App
   --coverage Tests.xcresult --provenance receipt.json
 ```
 
-See the [Xcode capture example](docs/provenance.md#xcode). The supplied capture command and metadata configuration must match. The analyzer reads real result bundles with `xccov`.
+See the [Xcode capture example](docs/provenance.md#xcode). The supplied capture command and metadata configuration must match, and the target must compile during capture. Capture automatically freezes precise LLVM coverage in the receipt, so analysis remains independent of DerivedData after capture. Keep the original result bundle for provenance checks. Legacy receipts still use `xccov` aggregates.
 
 Other build systems can supply `--sources-manifest sources.json --target App`. The JSON shape is `{"root":".","targets":{"App":["Sources/App.swift","Shared"]}}`; root is relative to the manifest, entries relative to root. Exact compiler contexts still come from capture; directory membership is not a substitute for build configuration.
 

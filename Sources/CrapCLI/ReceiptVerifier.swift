@@ -18,6 +18,10 @@ struct ReceiptVerifier {
         guard root != "/" else { throw ProvenanceError.invalid("invalid capture root") }
         let receiptPath = try CanonicalPath().resolve(path)
         let storedArtifacts = try canonicalArtifacts(receipt.artifacts)
+        let exports = try CapturedCoverageExports(receipt.coverageExports ?? [:])
+        guard Set(exports.values.keys).isSubset(of: Set(storedArtifacts.keys)) else {
+            throw ProvenanceError.invalid("coverage export is not bound to a captured artifact")
+        }
         let current = try InputSnapshot().read(root: root, excluding: [receiptPath] + Array(storedArtifacts.keys))
         guard current == receipt.inputs
         else { throw ProvenanceError.invalid("project inputs differ from captured sources") }

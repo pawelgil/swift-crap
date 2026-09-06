@@ -46,9 +46,7 @@ struct ReceiptSourceSelector: SourceSelecting {
     }
 
     private func capturedFile(at path: String, exclusions: [String]) throws -> [SelectedSource] {
-        guard path.hasPrefix(receipt.root + "/") else {
-            throw ProvenanceError.invalid("captured Xcode source escapes root: \(path)")
-        }
+        guard path.hasPrefix(receipt.root + "/") else { return [] }
         let relative = String(path.dropFirst(receipt.root.count + 1))
         guard receipt.inputs[relative] != nil else {
             throw ProvenanceError.invalid("captured Xcode source is not an input: \(relative)")

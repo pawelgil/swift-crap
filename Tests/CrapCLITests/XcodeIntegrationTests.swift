@@ -46,6 +46,50 @@ import Testing
             #expect(try CompilerProbe(context: context).evaluate("canImport(XcodeFixture)"))
         }
 
+        @Test func `matching simulator build context uses actual destination`() throws {
+            let fixture = try XcodeFixture()
+            let destination = try fixture.simulatorDestination()
+            let resultBundle = try fixture.test(destination: destination, sdk: "iphonesimulator")
+            let selection = XcodeSelection(
+                project: fixture.project.path,
+                scheme: "XcodeFixture",
+                target: "XcodeFixture",
+                destination: destination,
+            )
+
+            let metadata = try XcodeProjectDescriber().describe(
+                selection,
+                matchingXcodebuildCommand: fixture.testCommand(
+                    resultBundle: resultBundle,
+                    destination: destination,
+                    sdk: "iphonesimulator",
+                ),
+                workingDirectory: XcodeFixture.fixtureRoot.path,
+            )
+
+            let context = try #require(metadata.compilerContexts.first)
+            #expect(context.arguments.contains(where: { $0.contains("iPhoneSimulator") }))
+            #expect(context.arguments.contains(where: { $0.hasSuffix("-simulator") }))
+            #expect(try CompilerProbe(context: context).evaluate("os(iOS)"))
+            #expect(try CompilerProbe(context: context).evaluate("targetEnvironment(simulator)"))
+        }
+
+        @Test func `incremental result without compilation fails clearly`() throws {
+            let fixture = try XcodeFixture()
+            _ = try fixture.test()
+            let incrementalResult = try fixture.test(resultBundleName: "Incremental.xcresult")
+
+            #expect(throws: SourceSelectionError.invalidXcodeMetadata(
+                "result bundle has no SwiftDriver invocation for target XcodeFixture; rebuild the target during capture",
+            )) {
+                try XcodeProjectDescriber().describe(
+                    fixture.selection,
+                    matchingXcodebuildCommand: fixture.testCommand(resultBundle: incrementalResult),
+                    workingDirectory: XcodeFixture.fixtureRoot.path,
+                )
+            }
+        }
+
         @Test func `matching build context uses resolved Swift compiler override`() throws {
             let fixture = try XcodeFixture()
             let swiftCompiler = try fixture.makeSwiftCompilerWrapper()
@@ -152,11 +196,32 @@ import Testing
             return wrapper.path
         }
 
-        func test(swiftCompiler: String? = nil) throws -> URL {
-            let resultBundle = directory.appendingPathComponent("Tests.xcresult", isDirectory: true)
+        func simulatorDestination() throws -> String {
+            let text = try String(decoding: run("xcodebuild", [
+                "-project", project.path,
+                "-scheme", "XcodeFixture",
+                "-showdestinations",
+            ]), as: UTF8.self)
+            guard let line = text.split(separator: "\n").first(where: {
+                $0.contains("platform:iOS Simulator, arch:") && !$0.contains("placeholder")
+            }), let id = field("id", in: String(line)) else {
+                throw XcodeFixtureError.missingSimulatorDestination(text)
+            }
+            return "platform=iOS Simulator,id=\(id)"
+        }
+
+        func test(
+            swiftCompiler: String? = nil,
+            destination: String = "platform=macOS",
+            sdk: String? = nil,
+            resultBundleName: String = "Tests.xcresult",
+        ) throws -> URL {
+            let resultBundle = directory.appendingPathComponent(resultBundleName, isDirectory: true)
             _ = try run("xcodebuild", Array(testCommand(
                 resultBundle: resultBundle,
                 swiftCompiler: swiftCompiler,
+                destination: destination,
+                sdk: sdk,
             ).dropFirst()))
             return resultBundle
         }
@@ -165,6 +230,7 @@ import Testing
             resultBundle: URL,
             swiftCompiler: String? = nil,
             destination: String = "platform=macOS",
+            sdk: String? = nil,
         ) -> [String] {
             var arguments = [
                 "xcodebuild",
@@ -176,6 +242,9 @@ import Testing
                 "-resultBundlePath", resultBundle.path,
                 "-enableCodeCoverage", "YES",
             ]
+            if let sdk {
+                arguments += ["-sdk", sdk, "ARCHS=\(Self.nativeArchitecture)", "ONLY_ACTIVE_ARCH=YES"]
+            }
             if let swiftCompiler {
                 arguments.append("SWIFT_EXEC=\(swiftCompiler)")
             }
@@ -226,6 +295,14 @@ import Testing
             return try Data(contentsOf: capture)
         }
 
+        private func field(_ name: String, in destination: String) -> String? {
+            let prefix = "\(name):"
+            return destination.split(separator: ",").lazy
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .first { $0.hasPrefix(prefix) }
+                .map { String($0.dropFirst(prefix.count)) }
+        }
+
         static let fixtureRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .appendingPathComponent("../../Fixtures/XcodeFixture")
@@ -250,5 +327,6 @@ import Testing
     private enum XcodeFixtureError: Error {
         case commandFailed(String, String)
         case missingNativeCoverage(String)
+        case missingSimulatorDestination(String)
     }
 #endif

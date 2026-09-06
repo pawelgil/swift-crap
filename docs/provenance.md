@@ -2,7 +2,7 @@
 
 ## Guarantees
 
-Capture requires new output paths, snapshots the project before the supplied command, requires successful completion, derives compiler-aware callable inventory, fingerprints coverage and checks the input snapshot again before writing a receipt. Analysis checks project inventory/content and selected artifacts before and after scoring. A source edit of identical length still invalidates the receipt. Modification times are not evidence.
+Capture requires new output paths, snapshots the project before the supplied command, requires successful completion, fingerprints coverage before deriving compiler-aware callable inventory and exporting precise evidence, and checks both artifacts and inputs again before writing a receipt. Analysis checks project inventory/content and selected artifacts before and after scoring. A source edit of identical length still invalidates the receipt. Modification times are not evidence.
 
 SHA-256 fingerprints cover regular source-tree inputs, including test sources and build configuration. `.git`, `.build`, `DerivedData`, `.swift-crap` and explicitly declared output artifacts are excluded. Keep build products outside the source tree or in those build directories. Input symlinks may not escape the root. Resolve dependencies and generate source inputs before capture; a capture that changes tracked source/configuration inputs fails.
 
@@ -10,7 +10,7 @@ A receipt is a local, unsigned record, not a security attestation. The command, 
 
 ## Compiler contexts
 
-SwiftPM contexts come from its actual `description.json` Swift compiler commands, including module name, target sources, defines, language mode, SDK and import paths. Module name is semantic: `canImport(CurrentModule)` can depend on it. Xcode contexts come from the resolved indexing graph under the same command's project, scheme, configuration and destination. The compiler is selected from that target's resolved `SWIFT_EXEC` or `TOOLCHAIN_DIR`, preserving explicit overrides; supplemental toolchains such as Metal are not mistaken for competing Swift compilers. Captured products remain available while compiler conditional queries run.
+SwiftPM contexts come from its actual `description.json` Swift compiler commands, including module name, target sources, defines, language mode, SDK and import paths. Module name is semantic: `canImport(CurrentModule)` can depend on it. Xcode capture reads the actual SwiftDriver invocation from the new result bundle's build log. Indexing settings are not compiler-context evidence: they can report a device SDK even when the tests built for a simulator. The logged compiler is checked against that target's resolved `SWIFT_EXEC` or `TOOLCHAIN_DIR`, preserving explicit overrides; supplemental toolchains such as Metal are not mistaken for competing Swift compilers. Captured products remain available while compiler conditional queries run.
 
 SwiftIfConfig evaluates the parsed conditional structure. A compiler-backed configuration answers conditions such as `os`, `arch`, `canImport`, `swift`, `compiler`, `hasFeature` and custom defines using that context. Parser experimental features are enabled only when confirmed by the compiler. Invalid active syntax is rejected; syntax in regions the compiler deliberately leaves unparsed is not treated as active source. Complexity and callable discovery share the same active regions.
 
@@ -50,6 +50,20 @@ swift-crap analyze --xcode-project "$PWD/App.xcodeproj" --scheme App --target Ap
 ```
 
 Target selection uses Xcode's resolved sources, not an inferred directory layout. Capture requires a single built architecture: use one `ARCHS` value or `ONLY_ACTIVE_ARCH=YES`. An architecture in `-destination` alone does not prevent a universal build. Real XCTest/xcresult coverage and synchronized-folder exceptions are exercised by the macOS integration and executable tests. Workspaces and unusual build frontends can use explicit manifests/contexts; unsupported metadata fails instead of guessing.
+
+The selected target must compile during capture so its SwiftDriver invocation is present in the result bundle. Use fresh DerivedData as above, or `clean test` when reusing a stable build-cache location for baseline comparisons. An incremental run that performs no compilation fails with a rebuild diagnostic; the tool does not substitute an indexing command or an unrelated cached build description.
+
+Xcode capture automatically preserves validated, column-precise LLVM evidence in the receipt's optional `coverageExports` field, keyed by the original result bundle path. The result bundle itself is not modified, and no extra output flag is required. Capture needs the instrumented build product and the destination's profile while they still exist. Missing, conflicting or mismatched precise evidence fails capture rather than silently falling back to aggregate coverage.
+
+Native source filtering limits file-level export data to the selected target's covered authored sources. LLVM still exports its complete linked function list, so the adapter retains whole native function records whose filename tables reference selected sources. Regions, counts, filename tables and their index relationships are not rewritten. This avoids embedding unrelated dependency coverage while retaining precise ownership evidence; source inventory still includes authored bodies with no native record. The scoped document is serialized deterministically and those bytes are frozen in the receipt. This distinction follows the [LLVM JSON exporter](https://github.com/llvm/llvm-project/blob/llvmorg-21.1.0/llvm/tools/llvm-cov/CoverageExporterJson.cpp).
+
+Build-product selection must agree with the selected project's resolved settings and the coverage report; a shared source file is not sufficient identity. Native file totals, per-function aggregate counts, executable line counts and executable subranges corroborate the selected sources against the result bundle. The result-summary query runs on a disposable private copy because Xcode can lazily create `database.sqlite3` during that read. The original artifact remains digest-bound and unchanged.
+
+Keep the receipt, original `.xcresult` and unchanged source tree for later analysis. DerivedData may be removed after successful capture: analysis uses the frozen export, still verifies the original result bundle digest, and does not search for replacement build products. Older receipts without frozen exports remain readable and use the legacy `xccov` adapter, whose column-less aggregates can remain ambiguous for same-line closures.
+
+Actual SwiftDriver contexts differ from older indexing-derived contexts, so their build identities need not match. Regenerate an Xcode baseline from a new capture when adopting this backend; do not relabel an old report to bypass the identity check.
+
+Missing native function records are a separate issue. Native regression fixtures show authored `#Preview` closures, unavailable initializers and an executing `@Observable` observer without independent LLVM function records. Neither a successful test run nor a neighboring function's execution proves coverage for those authored bodies. They remain strict missing-data errors unless the caller explicitly chooses `--missing zero`; that policy reports an assumption, not a measurement.
 
 ## Legacy inputs
 

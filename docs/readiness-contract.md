@@ -12,9 +12,9 @@ An analysis validates the receipt, current project input inventory and contents,
 
 ## Build-aware inventory
 
-Compiler contexts come from a SwiftPM build description, Xcode's resolved indexing compiler commands, or an explicit context manifest for other build systems. Each context records compiler, working directory, arguments, module and source membership. Compiler-backed conditional queries use that context, including search paths, SDK, target, language mode, custom conditions and feature flags. SwiftIfConfig traverses only active regions in the original source tree, retaining coordinates. A source claimed by multiple contexts is analyzed under each; only identical active inventories can be reconciled. Unknown or ambiguous contexts/conditions fail closed.
+Compiler contexts come from a SwiftPM build description, actual Xcode SwiftDriver invocations in the new result bundle, or an explicit context manifest for other build systems. Each context records compiler, working directory, arguments, module and source membership. Compiler-backed conditional queries use that context, including search paths, SDK, target, language mode, custom conditions and feature flags. SwiftIfConfig traverses only active regions in the original source tree, retaining coordinates. A source claimed by multiple contexts is analyzed under each; only identical active inventories can be reconciled. Unknown or ambiguous contexts/conditions fail closed.
 
-Xcode selectors use Xcode's resolved indexing build graph, not directory guesses or handwritten project-file parsing. Real macOS XCTest execution produces a genuine result bundle; the analyzer reads its xccov report. Portable LLVM support remains tested on macOS and Linux.
+Xcode capture binds resolved target membership and actual compiler settings, not directory guesses or handwritten project-file parsing. Standalone unverified selection uses the resolved indexing graph. Capture requires the selected target to compile and automatically freezes precise LLVM coverage alongside its result-bundle binding. Later analysis must not depend on DerivedData. Real XCTest execution exercises native result bundles; portable LLVM support remains tested on macOS and Linux.
 
 ## Independent evidence
 

@@ -1,9 +1,11 @@
 import CrapCore
 
-struct LLVMLineCoverage {
+package struct LLVMLineCoverage {
     static let maximumExpandedLinesPerFunction = 1_000_000
 
-    func lines(from regions: [LLVMRegion]) throws -> [CoverageLine] {
+    package init() {}
+
+    package func lines(from regions: [LLVMRegion]) throws -> [CoverageLine] {
         let segments = try LLVMSegmentBuilder().build(from: regions)
         guard let firstLine = segments.first?.position.line,
               let lastLine = segments.last?.position.line

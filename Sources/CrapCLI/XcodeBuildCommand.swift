@@ -24,6 +24,17 @@ struct XcodeBuildCommand {
         return arguments
     }
 
+    func resultBundlePath(_ command: [String], workingDirectory: String? = nil) throws -> String {
+        let arguments = try invocationArguments(command)
+        let paths = values(after: "-resultBundlePath", in: arguments)
+        guard paths.count == 1, let path = paths.first, !path.isEmpty else {
+            throw SourceSelectionError.xcodeCommand(
+                "capture command must provide exactly one -resultBundlePath",
+            )
+        }
+        return canonical(path, relativeTo: workingDirectory)
+    }
+
     private func invocationArguments(_ command: [String]) throws -> [String] {
         guard let executable = command.first else {
             throw SourceSelectionError.xcodeCommand("missing xcodebuild command")

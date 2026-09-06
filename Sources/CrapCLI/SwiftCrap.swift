@@ -35,6 +35,7 @@ struct SwiftCrap {
             artifactDigest: ArtifactDigest(),
             commandRunner: LocalCaptureCommandRunner(),
             contextLoader: LocalCompilerContextLoader(),
+            coverageExporter: LocalCaptureCoverageExporter(),
             inventory: CaptureInventory(),
             pathPreparer: LocalCapturePathPreparer(),
             receiptWriter: JSONCaptureReceiptWriter(),
@@ -72,12 +73,16 @@ struct SwiftCrap {
     private static func analysisUseCase(
         receipt: CaptureReceipt?,
         baseline: ValidatedBaseline?,
-    ) -> AnalyzeProject {
+    ) throws -> AnalyzeProject {
         let selector: any SourceSelecting = receipt.map { ReceiptSourceSelector(receipt: $0) } ?? LocalSourceSelector()
         let analyzer: any SourceAnalyzing = receipt.map { CapturedSourceAnalyzer(receipt: $0) } ?? SwiftSourceAnalyzer()
+        let reader = try CapturedCoverageFileReader(
+            exports: receipt?.coverageExports ?? [:],
+            fallback: XcodeCoverageFileReader(),
+        )
         return AnalyzeProject(
             sourceSelector: selector,
-            fileReader: ValidatedBaselineFileReader(fileReader: XcodeCoverageFileReader(), baseline: baseline),
+            fileReader: ValidatedBaselineFileReader(fileReader: reader, baseline: baseline),
             sourceAnalyzer: analyzer,
             coverageDecoder: CompilerCoverageDecoder(),
         )

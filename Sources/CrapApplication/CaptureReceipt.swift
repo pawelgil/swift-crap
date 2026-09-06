@@ -1,4 +1,5 @@
 import CrapCore
+import Foundation
 
 public struct CaptureReceipt: Codable, Sendable {
     public let schemaVersion: Int
@@ -10,6 +11,7 @@ public struct CaptureReceipt: Codable, Sendable {
     public let contexts: [CompilerContext]
     public let callables: [Callable]
     public let xcode: XcodeSelection?
+    public let coverageExports: [String: Data]?
 
     public init(
         schemaVersion: Int,
@@ -21,6 +23,7 @@ public struct CaptureReceipt: Codable, Sendable {
         contexts: [CompilerContext],
         callables: [Callable],
         xcode: XcodeSelection? = nil,
+        coverageExports: [String: Data]? = nil,
     ) {
         self.schemaVersion = schemaVersion
         self.metric = metric
@@ -31,5 +34,6 @@ public struct CaptureReceipt: Codable, Sendable {
         self.contexts = contexts
         self.callables = callables
         self.xcode = xcode
+        self.coverageExports = coverageExports
     }
 }
