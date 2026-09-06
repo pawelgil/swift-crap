@@ -340,6 +340,7 @@ async function simulatorDestination() {
     const { stdout } = await execute('xcodebuild', [
         '-project', project,
         '-scheme', 'XcodeFixture',
+        '-sdk', 'iphonesimulator',
         '-showdestinations',
     ], { timeout: 120_000, maxBuffer: 8 * 1024 * 1024 });
     const line = stdout.split('\n').find(value =>

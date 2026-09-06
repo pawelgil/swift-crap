@@ -74,17 +74,23 @@ import Testing
             #expect(try CompilerProbe(context: context).evaluate("targetEnvironment(simulator)"))
         }
 
-        @Test func `incremental result without compilation fails clearly`() throws {
+        @Test func `test-only result without build log fails clearly`() throws {
             let fixture = try XcodeFixture()
             _ = try fixture.test()
-            let incrementalResult = try fixture.test(resultBundleName: "Incremental.xcresult")
+            let testOnlyResult = try fixture.test(
+                resultBundleName: "Incremental.xcresult",
+                action: "test-without-building",
+            )
 
-            #expect(throws: SourceSelectionError.invalidXcodeMetadata(
-                "result bundle has no SwiftDriver invocation for target XcodeFixture; rebuild the target during capture",
+            #expect(throws: SourceSelectionError.xcodeDescription(
+                "cannot read result bundle build log: Error: No build log available",
             )) {
                 try XcodeProjectDescriber().describe(
                     fixture.selection,
-                    matchingXcodebuildCommand: fixture.testCommand(resultBundle: incrementalResult),
+                    matchingXcodebuildCommand: fixture.testCommand(
+                        resultBundle: testOnlyResult,
+                        action: "test-without-building",
+                    ),
                     workingDirectory: XcodeFixture.fixtureRoot.path,
                 )
             }
@@ -200,6 +206,7 @@ import Testing
             let text = try String(decoding: run("xcodebuild", [
                 "-project", project.path,
                 "-scheme", "XcodeFixture",
+                "-sdk", "iphonesimulator",
                 "-showdestinations",
             ]), as: UTF8.self)
             guard let line = text.split(separator: "\n").first(where: {
@@ -215,6 +222,7 @@ import Testing
             destination: String = "platform=macOS",
             sdk: String? = nil,
             resultBundleName: String = "Tests.xcresult",
+            action: String = "test",
         ) throws -> URL {
             let resultBundle = directory.appendingPathComponent(resultBundleName, isDirectory: true)
             _ = try run("xcodebuild", Array(testCommand(
@@ -222,6 +230,7 @@ import Testing
                 swiftCompiler: swiftCompiler,
                 destination: destination,
                 sdk: sdk,
+                action: action,
             ).dropFirst()))
             return resultBundle
         }
@@ -231,6 +240,7 @@ import Testing
             swiftCompiler: String? = nil,
             destination: String = "platform=macOS",
             sdk: String? = nil,
+            action: String = "test",
         ) -> [String] {
             var arguments = [
                 "xcodebuild",
@@ -248,7 +258,7 @@ import Testing
             if let swiftCompiler {
                 arguments.append("SWIFT_EXEC=\(swiftCompiler)")
             }
-            arguments.append("test")
+            arguments.append(action)
             return arguments
         }
 
