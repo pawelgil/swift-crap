@@ -9,8 +9,9 @@ struct CapturePathTests {
         defer { try? FileManager.default.removeItem(at: fixture) }
         let coverage = fixture.appendingPathComponent("coverage.json")
         try Data().write(to: coverage)
+        let path = try CanonicalPath().resolve(coverage.path)
 
-        #expect(throws: (any Error).self) {
+        #expect(throws: ProvenanceError.invalid("capture output already exists: \(path); use a fresh path")) {
             try LocalCapturePathPreparer().prepare(makeRequest(root: fixture, coverage: [coverage.path]))
         }
     }
@@ -20,7 +21,7 @@ struct CapturePathTests {
         defer { try? FileManager.default.removeItem(at: fixture) }
         let paths = try makeAliasedOutput(in: fixture)
 
-        #expect(throws: (any Error).self) {
+        #expect(throws: ProvenanceError.invalid("invalid capture paths")) {
             try LocalCapturePathPreparer().prepare(
                 makeRequest(root: fixture, coverage: [paths.original, paths.alias]),
             )
@@ -73,7 +74,7 @@ struct CapturePathTests {
             command: ["true"],
         )
 
-        #expect(throws: (any Error).self) {
+        #expect(throws: ProvenanceError.invalid("capture outputs overlap")) {
             try LocalCapturePathPreparer().prepare(request)
         }
     }

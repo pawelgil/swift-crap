@@ -31,12 +31,12 @@ struct ReceiptVerifierTests {
         )
         try ReceiptVerifier().validate(receipt, at: output.path, coverage: [coverage.path])
         try Data("changed".utf8).write(to: coverage)
-        #expect(throws: (any Error).self) {
+        #expect(throws: ProvenanceError.invalid("coverage artifact is not captured or has changed: \(coverage.path)")) {
             try ReceiptVerifier().validate(receipt, at: output.path, coverage: [coverage.path])
         }
         try Data("coverage".utf8).write(to: coverage)
         try Data("func new() {}".utf8).write(to: source)
-        #expect(throws: (any Error).self) {
+        #expect(throws: ProvenanceError.invalid("project inputs differ from captured sources")) {
             try ReceiptVerifier().validate(receipt, at: output.path, coverage: [coverage.path])
         }
     }
