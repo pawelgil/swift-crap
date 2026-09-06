@@ -23,6 +23,7 @@ Build a standalone source-level Swift CRAP engine and CLI with project, package,
 - Repository reality: preserve failed upstream attempts, compare manually counted decisions with native per-function coverage and keep missing compiler records distinct from measured zero execution.
 - Hosted portability: replace macOS-only temporary-path assumptions with real portable symlink fixtures, keep the native Xcode fixture compatible with its bundled compiler, and resolve the actual Swift compiler from target build settings rather than rejecting supplemental Metal toolchains.
 - Module semantics: retain SwiftPM's module name in compiler arguments; a native counterexample and executable capture test prove that omitting it changes `canImport(CurrentModule)`.
+- Architecture selection: an explicit Xcode destination architecture does not narrow a universal `ARCHS` build. A native two-slice framework counterexample requires validating effective build architectures independently of the execution destination.
 
 Each accepted behavior is covered by a focused regression test. The complete local and CI gate is `./scripts/verify.sh`.
 

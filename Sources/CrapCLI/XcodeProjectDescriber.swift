@@ -117,35 +117,23 @@ struct XcodeProjectDescriber: XcodeProjectDescribing {
         guard matches.count == 1, let settings = matches.first?.buildSettings else {
             throw SourceSelectionError.target(selection.target)
         }
-        let architectures = builtArchitectures(settings, destination: selection.destination)
+        let architectures = builtArchitectures(settings)
         guard !architectures.isEmpty else {
             throw SourceSelectionError.invalidXcodeMetadata("target \(selection.target) has no effective architecture")
         }
         guard settings["ONLY_ACTIVE_ARCH"] == "YES" || architectures.count <= 1 else {
             let names = architectures.sorted().joined(separator: ", ")
             throw SourceSelectionError.xcodeCommand(
-                "capture builds multiple architectures (\(names)); select one destination architecture",
+                "capture builds multiple architectures (\(names)); set ARCHS to one architecture or ONLY_ACTIVE_ARCH=YES",
             )
         }
         return settings
     }
 
-    private func builtArchitectures(_ settings: [String: String], destination: String) -> Set<String> {
-        if let architecture = destinationArchitecture(destination) {
-            return [architecture]
-        }
+    private func builtArchitectures(_ settings: [String: String]) -> Set<String> {
         let architectures = words(settings["ARCHS"])
         let excluded = words(settings["EXCLUDED_ARCHS"])
         return Set(architectures).subtracting(excluded)
-    }
-
-    private func destinationArchitecture(_ destination: String) -> String? {
-        destination.split(separator: ",").compactMap { component in
-            let values = component.split(separator: "=", maxSplits: 1).map {
-                $0.trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            return values.count == 2 && values[0].lowercased() == "arch" ? values[1] : nil
-        }.first
     }
 
     private func words(_ value: String?) -> Set<String> {

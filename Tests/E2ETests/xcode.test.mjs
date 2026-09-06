@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { after, before, test } from 'node:test';
-import { cp, mkdtemp, rm } from 'node:fs/promises';
+import { access, cp, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -131,6 +131,46 @@ test('Xcode capture records active configuration and xcresult provenance', {
     ]);
     assert.equal(mismatched.code, 1);
     assert.match(mismatched.stderr, /Xcode selection differs from capture/);
+});
+
+test('Xcode capture rejects universal build with explicit host destination architecture', {
+    skip: process.platform !== 'darwin',
+}, async () => {
+    const hostArchitecture = process.arch === 'arm64' ? 'arm64' : 'x86_64';
+    const destination = `platform=macOS,arch=${hostArchitecture}`;
+    const capturedResult = join(directory, 'Universal.xcresult');
+    const receipt = join(directory, 'universal-capture.json');
+    const command = [
+        'xcodebuild',
+        '-project', project,
+        '-scheme', 'XcodeFixture',
+        '-configuration', 'Debug',
+        '-destination', destination,
+        '-derivedDataPath', join(directory, 'UniversalDerivedData'),
+        '-resultBundlePath', capturedResult,
+        '-enableCodeCoverage', 'YES',
+        'ARCHS=arm64 x86_64',
+        'ONLY_ACTIVE_ARCH=NO',
+        'test',
+    ];
+
+    const capture = await cli([
+        'capture',
+        '--root', fixture,
+        '--output', receipt,
+        '--coverage', capturedResult,
+        '--xcode-project', project,
+        '--scheme', 'XcodeFixture',
+        '--target', 'XcodeFixture',
+        '--configuration', 'Debug',
+        '--destination', destination,
+        '--', ...command,
+    ]);
+
+    assert.equal(capture.code, 1);
+    assert.match(capture.stderr, /capture builds multiple architectures \(arm64, x86_64\)/);
+    await access(capturedResult);
+    await assert.rejects(access(receipt), { code: 'ENOENT' });
 });
 
 async function cli(args) {

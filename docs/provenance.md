@@ -49,7 +49,7 @@ swift-crap analyze --xcode-project "$PWD/App.xcodeproj" --scheme App --target Ap
   --coverage "$capture_run/Tests.xcresult" --provenance "$capture_run/receipt.json"
 ```
 
-Target selection uses Xcode's resolved sources, not an inferred directory layout. Real XCTest/xcresult coverage and synchronized-folder exceptions are exercised by the macOS integration and executable tests. Workspaces and unusual build frontends can use explicit manifests/contexts; unsupported metadata fails instead of guessing.
+Target selection uses Xcode's resolved sources, not an inferred directory layout. Capture requires a single built architecture: use one `ARCHS` value or `ONLY_ACTIVE_ARCH=YES`. An architecture in `-destination` alone does not prevent a universal build. Real XCTest/xcresult coverage and synchronized-folder exceptions are exercised by the macOS integration and executable tests. Workspaces and unusual build frontends can use explicit manifests/contexts; unsupported metadata fails instead of guessing.
 
 ## Legacy inputs
 

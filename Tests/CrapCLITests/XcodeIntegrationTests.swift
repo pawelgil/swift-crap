@@ -84,6 +84,33 @@ import Testing
                 #expect(String(describing: error).contains("capture builds multiple architectures (arm64, x86_64)"))
             }
         }
+
+        @Test func `explicit destination architecture does not hide universal build context`() throws {
+            let fixture = try XcodeFixture()
+            let resultBundle = fixture.directory.appendingPathComponent("Universal.xcresult", isDirectory: true)
+            let destination = "platform=macOS,arch=\(XcodeFixture.nativeArchitecture)"
+            let selection = XcodeSelection(
+                project: fixture.project.path,
+                scheme: "XcodeFixture",
+                target: "XcodeFixture",
+                destination: destination,
+            )
+            let command = fixture.testCommand(resultBundle: resultBundle, destination: destination) + [
+                "ARCHS=arm64 x86_64",
+                "ONLY_ACTIVE_ARCH=NO",
+            ]
+
+            #expect(throws: SourceSelectionError.xcodeCommand(
+                "capture builds multiple architectures (arm64, x86_64); set ARCHS to one architecture or "
+                    + "ONLY_ACTIVE_ARCH=YES",
+            )) {
+                try XcodeProjectDescriber().describe(
+                    selection,
+                    matchingXcodebuildCommand: command,
+                    workingDirectory: XcodeFixture.fixtureRoot.path,
+                )
+            }
+        }
     }
 
     private final class XcodeFixture {
@@ -134,13 +161,17 @@ import Testing
             return resultBundle
         }
 
-        func testCommand(resultBundle: URL, swiftCompiler: String? = nil) -> [String] {
+        func testCommand(
+            resultBundle: URL,
+            swiftCompiler: String? = nil,
+            destination: String = "platform=macOS",
+        ) -> [String] {
             var arguments = [
                 "xcodebuild",
                 "-project", project.path,
                 "-scheme", "XcodeFixture",
                 "-configuration", "Debug",
-                "-destination", "platform=macOS",
+                "-destination", destination,
                 "-derivedDataPath", directory.appendingPathComponent("DerivedData").path,
                 "-resultBundlePath", resultBundle.path,
                 "-enableCodeCoverage", "YES",
@@ -199,6 +230,16 @@ import Testing
             .deletingLastPathComponent()
             .appendingPathComponent("../../Fixtures/XcodeFixture")
             .standardizedFileURL
+
+        static var nativeArchitecture: String {
+            #if arch(arm64)
+                "arm64"
+            #elseif arch(x86_64)
+                "x86_64"
+            #else
+                fatalError("unsupported macOS architecture")
+            #endif
+        }
     }
 
     private struct XcodeNativeCoverage: Equatable {
