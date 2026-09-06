@@ -193,4 +193,74 @@ struct CompilerCoverageIntegrationTests {
         #expect(addressors.allSatisfy { $0.callable.parentID == nil })
         #expect(addressors.allSatisfy { $0.callable.span.contains($0.callable.bodySpan.start) })
     }
+
+    #if os(macOS)
+        @Test func `preview closures remain authored without compiler records`() throws {
+            let source = """
+            import SwiftUI
+            struct PreviewSubject: View {
+                var body: some View { EmptyView() }
+            }
+            #Preview {
+                VStack {
+                    PreviewSubject()
+                }
+            }
+            """
+            let fixture = try CompilerFixture(source: source, entry: "print(\"main\")")
+
+            let callables = try fixture.callables()
+            let native = try fixture.nativeFunctions(input: 1)
+
+            #expect(callables.map(\.name) == ["PreviewSubject.body.getter", "$closure1", "$closure1.$closure1"])
+            #expect(native.compactMap(\.startLine) == [3])
+        }
+
+        @Test func `executed observed property remains authored without compiler record`() throws {
+            let source = """
+            import Observation
+            @Observable
+            final class Subject {
+                var value = 0 {
+                    didSet { print("observer:\\(value)") }
+                }
+            }
+            """
+            let fixture = try CompilerFixture(
+                source: source,
+                entry: "let subject = Subject()\nsubject.value = 1",
+            )
+
+            let output = try fixture.output(input: 1)
+            let callables = try fixture.callables()
+            let native = try fixture.nativeFunctions(input: 1)
+
+            #expect(output == "observer:1\n")
+            #expect(callables.map(\.name) == ["Subject.value.didSet"])
+            #expect(native.compactMap(\.startLine) == [4])
+        }
+    #endif
+
+    @Test func `unavailable initializer remains authored without compiler record`() throws {
+        let source = """
+        import Foundation
+        final class Subject: NSObject {
+            override init() {
+                super.init()
+            }
+            @available(*, unavailable)
+            required init?(coder _: NSCoder) {
+                fatalError("unavailable")
+            }
+            func live() { print("live") }
+        }
+        """
+        let fixture = try CompilerFixture(source: source, entry: "Subject().live()")
+
+        let callables = try fixture.callables()
+        let native = try fixture.nativeFunctions(input: 1)
+
+        #expect(callables.map(\.name) == ["Subject.init()", "Subject.init?(coder: NSCoder)", "Subject.live()"])
+        #expect(native.compactMap(\.startLine) == [3, 10])
+    }
 }

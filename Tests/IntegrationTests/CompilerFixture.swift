@@ -45,6 +45,10 @@ final class CompilerFixture {
         try CompilerCoverageDecoder().decode(coverageExport(input: input)).records
     }
 
+    func callables() throws -> [Callable] {
+        try SwiftSourceAnalyzer().analyze(source: source, file: "Subject.swift")
+    }
+
     func coverageExport(input: Int) throws -> Data {
         let raw = directory.appendingPathComponent("run-\(input).profraw")
         let merged = directory.appendingPathComponent("run-\(input).profdata")
@@ -66,6 +70,19 @@ final class CompilerFixture {
               let executable = Int(row[4]), let missed = Int(row[5])
         else { throw FixtureError.missingNativeFunction(symbolSuffix) }
         return NativeLineCoverage(executable: executable, covered: executable - missed)
+    }
+
+    func nativeFunctions(input: Int) throws -> [CoverageOracle.Function] {
+        let export = try JSONDecoder().decode(CoverageOracle.self, from: coverageExport(input: input))
+        return export.data.flatMap(\.functions)
+            .filter { $0.filenames.contains(sourceURL.path) }
+            .sorted { ($0.startLine ?? 0, $0.name) < ($1.startLine ?? 0, $1.name) }
+    }
+
+    func output(input: Int) throws -> String {
+        let raw = directory.appendingPathComponent("output-\(UUID()).profraw")
+        let data = try run(binaryURL.path, [String(input)], environment: ["LLVM_PROFILE_FILE": raw.path])
+        return String(decoding: data, as: UTF8.self)
     }
 
     private func run(_ command: String, _ arguments: [String], environment: [String: String] = [:]) throws -> Data {
