@@ -5,7 +5,7 @@ enum SourceSelectionError: Error, CustomStringConvertible, Equatable {
     case invalidManifestRoot(String)
     case invalidManifestSource(String)
     case invalidPackageMetadata
-    case invalidXcodeMetadata
+    case invalidXcodeMetadata(String)
     case invalidXcodeProject(String)
     case missingPath(String)
     case notFile(String)
@@ -23,7 +23,7 @@ enum SourceSelectionError: Error, CustomStringConvertible, Equatable {
         case let .invalidManifestRoot(path): "invalid sources manifest root: \(path)"
         case let .invalidManifestSource(path): "sources manifest entry must be root-relative: \(path)"
         case .invalidPackageMetadata: "swift package describe returned invalid metadata"
-        case .invalidXcodeMetadata: "xcodebuild returned invalid source metadata"
+        case let .invalidXcodeMetadata(reason): "xcodebuild returned invalid source metadata: \(reason)"
         case let .invalidXcodeProject(path): "Xcode project must be an .xcodeproj directory: \(path)"
         case let .missingPath(path): "source path does not exist: \(path)"
         case let .notFile(path): "file scope requires a regular file: \(path)"

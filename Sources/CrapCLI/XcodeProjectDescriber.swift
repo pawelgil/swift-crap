@@ -5,8 +5,15 @@ struct XcodeProjectDescriber: XcodeProjectDescribing {
     func describe(_ selection: XcodeSelection) throws -> XcodeProjectMetadata {
         let capture = try CaptureFiles()
         defer { capture.remove() }
-        let metadata = try describe(selection, buildArguments: ["-derivedDataPath", capture.scratchURL.path])
-        return XcodeProjectMetadata(sourceFiles: metadata.sourceFiles, compilerContexts: [])
+        let data = try output(
+            selection,
+            buildArguments: ["-derivedDataPath", capture.scratchURL.path],
+            queryArguments: ["-showBuildSettingsForIndex", "-json"],
+        )
+        return try XcodeProjectMetadata(
+            sourceFiles: sourceFiles(data, target: selection.target),
+            compilerContexts: [],
+        )
     }
 
     func describe(
@@ -102,7 +109,7 @@ struct XcodeProjectDescriber: XcodeProjectDescribing {
         do {
             entries = try JSONDecoder().decode([XcodeBuildSettingsMetadata].self, from: data)
         } catch {
-            throw SourceSelectionError.invalidXcodeMetadata
+            throw SourceSelectionError.invalidXcodeMetadata("cannot decode build settings: \(error)")
         }
         let matches = entries.filter { $0.target == selection.target }
         guard matches.count == 1, let settings = matches.first?.buildSettings else {
@@ -110,7 +117,7 @@ struct XcodeProjectDescriber: XcodeProjectDescribing {
         }
         let architectures = builtArchitectures(settings, destination: selection.destination)
         guard !architectures.isEmpty else {
-            throw SourceSelectionError.invalidXcodeMetadata
+            throw SourceSelectionError.invalidXcodeMetadata("target \(selection.target) has no effective architecture")
         }
         guard settings["ONLY_ACTIVE_ARCH"] == "YES" || architectures.count <= 1 else {
             let names = architectures.sorted().joined(separator: ", ")
@@ -147,13 +154,32 @@ struct XcodeProjectDescriber: XcodeProjectDescribing {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func decode(_ data: Data, target: String) throws -> XcodeProjectMetadata {
+    func decode(_ data: Data, target: String) throws -> XcodeProjectMetadata {
+        let document = try sourceDocument(data)
+        let swiftEntries = try swiftEntries(document, target: target)
+        let sourceFiles = swiftEntries.keys.sorted()
+        let contexts = try compilerContexts(entries: swiftEntries, sourceFiles: sourceFiles)
+        return XcodeProjectMetadata(sourceFiles: sourceFiles, compilerContexts: contexts)
+    }
+
+    func sourceFiles(_ data: Data, target: String) throws -> [String] {
+        try swiftEntries(sourceDocument(data), target: target).keys.sorted()
+    }
+
+    private func sourceDocument(_ data: Data) throws -> [String: [String: XcodeSourceMetadata]] {
         let document: [String: [String: XcodeSourceMetadata]]
         do {
             document = try JSONDecoder().decode([String: [String: XcodeSourceMetadata]].self, from: data)
         } catch {
-            throw SourceSelectionError.invalidXcodeMetadata
+            throw SourceSelectionError.invalidXcodeMetadata("cannot decode index metadata: \(error)")
         }
+        return document
+    }
+
+    private func swiftEntries(
+        _ document: [String: [String: XcodeSourceMetadata]],
+        target: String,
+    ) throws -> [String: XcodeSourceMetadata] {
         guard let targetMetadata = document[target] else {
             throw SourceSelectionError.target(target)
         }
@@ -161,9 +187,7 @@ struct XcodeProjectDescriber: XcodeProjectDescribing {
         guard !swiftEntries.isEmpty else {
             throw SourceSelectionError.xcodeTargetHasNoSwiftSources(target)
         }
-        let sourceFiles = swiftEntries.keys.sorted()
-        let contexts = try compilerContexts(entries: swiftEntries, sourceFiles: sourceFiles)
-        return XcodeProjectMetadata(sourceFiles: sourceFiles, compilerContexts: contexts)
+        return swiftEntries
     }
 
     private func compilerContexts(
@@ -174,15 +198,25 @@ struct XcodeProjectDescriber: XcodeProjectDescribing {
         var compilers: [String: String] = [:]
         let sourceSet = Set(sourceFiles)
         for source in sourceFiles {
-            guard let metadata = entries[source],
-                  let arguments = metadata.swiftASTCommandArguments,
-                  let moduleName = metadata.swiftASTModuleName,
-                  let toolchains = metadata.toolchains,
-                  toolchains.count == 1,
-                  let toolchain = toolchains.first,
-                  let directory = value(after: "-working-directory", in: arguments)
-            else {
-                throw SourceSelectionError.invalidXcodeMetadata
+            guard let metadata = entries[source] else {
+                throw SourceSelectionError.invalidXcodeMetadata("missing entry for source \(source)")
+            }
+            guard let arguments = metadata.swiftASTCommandArguments, !arguments.isEmpty else {
+                throw SourceSelectionError.invalidXcodeMetadata("source \(source) has no Swift compiler arguments")
+            }
+            guard let moduleName = metadata.swiftASTModuleName, !moduleName.isEmpty else {
+                throw SourceSelectionError.invalidXcodeMetadata("source \(source) has no Swift module name")
+            }
+            guard let toolchains = metadata.toolchains, !toolchains.isEmpty else {
+                throw SourceSelectionError.invalidXcodeMetadata("source \(source) has no toolchain")
+            }
+            guard toolchains.count == 1, let toolchain = toolchains.first else {
+                throw SourceSelectionError.invalidXcodeMetadata(
+                    "source \(source) has ambiguous toolchains: \(toolchains.joined(separator: ", "))",
+                )
+            }
+            guard let directory = value(after: "-working-directory", in: arguments) else {
+                throw SourceSelectionError.invalidXcodeMetadata("source \(source) has no working directory")
             }
             let compilerPath: String
             if let resolved = compilers[toolchain] {
@@ -199,7 +233,7 @@ struct XcodeProjectDescriber: XcodeProjectDescribing {
                 moduleName: moduleName,
             )
             guard Set(context.sources) == sourceSet else {
-                throw SourceSelectionError.invalidXcodeMetadata
+                throw SourceSelectionError.invalidXcodeMetadata("source \(source) has an incomplete Swift source list")
             }
             if !contexts.contains(context) {
                 contexts.append(context)
@@ -233,7 +267,7 @@ struct XcodeProjectDescriber: XcodeProjectDescribing {
         let path = try String(decoding: capture.outputData(), as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !path.isEmpty else {
-            throw SourceSelectionError.invalidXcodeMetadata
+            throw SourceSelectionError.invalidXcodeMetadata("xcrun returned an empty Swift compiler path")
         }
         return path
     }

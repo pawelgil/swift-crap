@@ -49,3 +49,11 @@ jobs:
             llvm-cov --version
           fi
       - run: ./scripts/verify.sh
+      - name: Diagnose Xcode metadata after failure
+        if: failure() && runner.os == 'macOS'
+        shell: bash
+        run: |
+          xcrun xcodebuild -project Fixtures/XcodeFixture/XcodeFixture.xcodeproj \
+            -scheme XcodeFixture -configuration Debug -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/swift-crap-metadata" \
+            -disableAutomaticPackageResolution -showBuildSettingsForIndex -json
