@@ -110,11 +110,15 @@ import Testing
                 at: wrapper.deletingLastPathComponent(),
                 withIntermediateDirectories: true,
             )
-            let toolchain = try String(decoding: run("--show-toolchain-path", []), as: UTF8.self)
+            let selectedCompiler = try String(decoding: run("--find", ["swiftc"]), as: UTF8.self)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
+            let selectedLibraries = URL(fileURLWithPath: selectedCompiler)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("lib")
             try FileManager.default.createSymbolicLink(
                 at: libraries,
-                withDestinationURL: URL(fileURLWithPath: toolchain).appendingPathComponent("usr/lib"),
+                withDestinationURL: selectedLibraries,
             )
             try Data("#!/bin/sh\nexec /usr/bin/xcrun swiftc \"$@\"\n".utf8).write(to: wrapper)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: wrapper.path)
