@@ -7,8 +7,8 @@ The executable acceptance tests define source selection, report contents, exit c
 | Module | Responsibility | Dependencies |
 | --- | --- | --- |
 | CrapCore | Callable/coverage values, reconciliation, scoring, gate evaluation | Foundation |
-| CrapApplication | Select/read/analyze/import/score use case and I/O capabilities | CrapCore |
-| CrapSyntax | SwiftSyntax callable inventory and decision counting | CrapCore, SwiftSyntax, SwiftParser |
+| CrapApplication | Analysis and capture use cases, receipt/context models and I/O capabilities | CrapCore |
+| CrapSyntax | Active callable inventory, decision counting, parser diagnostics | CrapCore, SwiftSyntax, SwiftParser, SwiftIfConfig |
 | CrapCoverage | LLVM/xccov decoding and normalization | CrapCore |
 | CrapCLI | Arguments, filesystem/package adapters, rendering, concrete composition | Application and adapters |
 
@@ -26,12 +26,12 @@ LLVM line coverage is reconstructed from per-function regions using the upstream
 
 ## Reproducibility
 
-Dependencies and metric semantics are pinned. Reports omit clocks, absolute source paths, and environment-dependent ordering. Baseline comparisons use callable identities rather than line numbers. Files are normalized relative to the explicit analysis root. Missing observations are distinguishable from recorded zero execution.
+Dependencies and metric semantics are pinned. Reports omit clocks, absolute source paths, and environment-dependent ordering. Baseline comparisons use callable identities rather than line numbers. Files are normalized relative to the explicit analysis root. Missing observations are distinguishable from recorded zero execution. Captured reports include an opaque build identity over the canonical root, exact scope/exclusions and compiler contexts; captured baselines require the same identity. Source inventories and output artifacts are excluded so source evolution remains comparable. Baseline trust validation and scoring share one immutable read.
 
-Source revision provenance must be enforced by the caller's build pipeline. Raw LLVM/xccov JSON cannot establish that an artifact belongs to the current checkout. This engine does not infer freshness from modification times.
+The explicit capture use case snapshots inputs before executing a supplied build/test command, binds new coverage artifacts and compiler-aware callable inventory, and rejects changed inputs. Analysis validates that receipt before and after scoring. SHA-256 is provided by the Swift Crypto adapter. Raw LLVM/xccov imports require a labeled unverified opt-in; modification times are never freshness evidence. Unsigned receipts are not security attestations.
 
 ## Scope decisions
 
-A project is a source tree, a package is SwiftPM membership, a package target is exact target membership, and a file is explicit selection. Xcode and custom build systems use a target source manifest. This keeps build-system assumptions in adapters and makes the selected files reviewable.
+A project is a source tree, a package is SwiftPM membership, a package target is exact target membership, and a file is explicit selection. Xcode uses its resolved indexing build graph and captures the exact selector/membership. Other build systems can provide target source and compiler-context manifests. This keeps build-system assumptions in adapters and makes the selected files reviewable.
 
-The v1 CLI provides JSON and text. SARIF, automatic Xcode project parsing, macro expansion, compiler-configuration-aware conditional evaluation, and compiler-USR enrichment are possible later adapters/features; none is required to compute and gate the current metric.
+The CLI provides deterministic JSON and text. SwiftIfConfig evaluates active branches using compiler-confirmed conditions and parser features. Source positions remain unchanged. Macro expansion, SARIF and compiler-USR enrichment are not claimed capabilities; those do not silently alter the authored-source metric.

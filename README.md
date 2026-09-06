@@ -1,12 +1,12 @@
 # swift-crap
 
-A reusable Swift engine and command-line tool for function-level CRAP scores. SwiftSyntax measures callable complexity; LLVM or Xcode coverage supplies measured execution. The CLI supports a source project, a Swift package, a target, or one Swift file.
+Function-level Swift complexity and CRAP scoring, with a reusable engine and CLI. SwiftSyntax measures authored decisions; LLVM or Xcode supplies per-function line execution.
 
-The metric is `crap-line-v1`: `complexity² × (1 − lineCoverage)³ + complexity`. Coverage measures execution, not assertion quality. The original CRAP proposal used basis-path coverage; this tool explicitly uses function-level line coverage because that is available from the Swift toolchain.
+The metric is `crap-line-v1`: **complexity² × (1 − lineCoverage)³ + complexity**. This is explicitly line-coverage CRAP, not the original basis-path variant. Coverage measures execution, not assertion quality.
 
-## Build and verify
+## Build
 
-Requires Swift 6.3 and macOS 13+ or Linux. Dependencies are pinned in `Package.resolved`. Development verification also requires Node.js 22+ and the LLVM coverage tools from the same toolchain used by `swiftc`.
+Requires Swift 6.3 and macOS 13+ or Linux. Development verification requires Node.js 22+, matching Swift/LLVM tools, and full Xcode on macOS. Dependencies are pinned.
 
 ```sh
 ./scripts/init.sh
@@ -15,104 +15,104 @@ swift build -c release
 .build/release/swift-crap --help
 ```
 
-On macOS the integration tests use `xcrun`. On Linux, `swiftc`, `llvm-profdata`, and `llvm-cov` must be available on `PATH` and belong to compatible toolchains.
+Use the release executable directly or copy it to a directory on your PATH. On Linux, `swiftc`, `llvm-profdata` and `llvm-cov` must be available from compatible toolchains. CI runs the portable gate on Linux and real Xcode coverage tests on macOS.
 
-## Generate coverage
+## Capture before gating
 
-Run the project's tests successfully with instrumentation before analyzing it:
+Raw coverage JSON cannot establish source freshness. `capture` snapshots source/configuration/test inputs, runs an explicit build/test command, records fresh coverage artifacts, and derives active callable inventory using the captured compiler configuration. `analyze` verifies that evidence before scoring. It never runs tests itself.
 
-```sh
-swift test --package-path /path/to/package --enable-code-coverage
-swift test --package-path /path/to/package --show-codecov-path
-```
-
-Use the JSON path printed by SwiftPM. For Xcode, enable code coverage in the test run and export the result:
+For a Swift package, resolve dependencies first, then use a fresh output directory:
 
 ```sh
-xcrun xccov view --report --json /path/to/Tests.xcresult > coverage.json
+cd /path/to/package
+swift package resolve
+capture_run="$(mktemp -d)"
+build_path="$(swift build --scratch-path "$capture_run/build" --show-bin-path)"
+swift-crap capture --root "$PWD" \
+  --output "$capture_run/receipt.json" \
+  --coverage "$capture_run/coverage.json" \
+  --build-description "$build_path/description.json" \
+  -- sh -c 'swift test --enable-code-coverage --scratch-path "$1/build" &&
+    cp "$(swift test --scratch-path "$1/build" --show-codecov-path)" "$1/coverage.json"' sh "$capture_run"
+
+swift-crap analyze --package "$PWD" \
+  --coverage "$capture_run/coverage.json" --provenance "$capture_run/receipt.json"
 ```
 
-The scorer reads artifacts and never executes the analyzed project's tests. Package scope evaluates its SwiftPM manifest to obtain target membership, using isolated temporary build/cache paths and disabling automatic dependency resolution. Run only manifests you trust, just as with SwiftPM itself.
+Outputs must not already exist. Failed tests, changed inputs, missing compiler contexts and changed artifacts fail closed. Resolve dependencies and generate source inputs before capture. See [provenance and trust](docs/provenance.md) for the precise guarantees and custom-build context format.
+
+For exploration only, explicitly opt out:
+
+```sh
+swift-crap analyze --file Sources/Feature.swift --coverage coverage.json --trust-coverage unverified
+```
+
+That report is labeled `unverified`; it does not claim freshness or active-build inventory.
 
 ## Select a scope
 
-```sh
-swift-crap analyze --project /path/to/project --coverage coverage.json
-swift-crap analyze --package /path/to/package --coverage coverage.json
-swift-crap analyze --package /path/to/package --target MyLibrary --coverage coverage.json
-swift-crap analyze --file /path/to/project/Sources/Feature.swift --root /path/to/project --coverage coverage.json
-```
-
-Project scope recursively discovers Swift sources, excluding build, dependency, hidden, and test directories. Use repeated `--exclude` root-relative path prefixes for additional exclusions. Package and target scopes use SwiftPM's declared source membership, including custom paths and source exclusions. Explicit file selection also works for test files. `--root` stabilizes relative identities when comparing narrower scopes with a project report.
-
-For Xcode and other build systems, provide target membership explicitly:
-
-```json
-{
-  "root": ".",
-  "targets": {
-    "MyApp": ["App/Sources", "Shared/Feature.swift"]
-  }
-}
-```
+All scopes accept `--coverage ARTIFACT --provenance RECEIPT`:
 
 ```sh
-swift-crap analyze --sources-manifest sources.json --target MyApp --coverage coverage.json
+swift-crap analyze --project /path/to/project --coverage coverage.json --provenance receipt.json
+swift-crap analyze --package /path/to/package --coverage coverage.json --provenance receipt.json
+swift-crap analyze --package /path/to/package --target MyLibrary --coverage coverage.json --provenance receipt.json
+swift-crap analyze --file /path/to/project/Sources/Feature.swift --coverage coverage.json --provenance receipt.json
 ```
 
-The manifest root is relative to the manifest file. Target entries are relative to that root and may be files or directories. This version does not infer Xcode target membership from `.pbxproj` files.
+Project mode excludes build, dependency, hidden and test directories, plus SwiftPM manifests. Repeated `--exclude PREFIX` applies root-relative component prefixes. Package/target modes use SwiftPM membership, including custom paths and exclusions. Explicit file selection can include tests. Captured analyses retain the receipt's root for identities across narrower scopes.
+
+Xcode target membership comes from Xcode's resolved indexing build graph, including synchronized folders and membership exceptions:
+
+```sh
+swift-crap analyze --xcode-project /path/App.xcodeproj --scheme App --target App \
+  --configuration Debug --destination 'platform=macOS' \
+  --coverage Tests.xcresult --provenance receipt.json
+```
+
+See the [Xcode capture example](docs/provenance.md#xcode). The supplied capture command and metadata configuration must match. The analyzer reads real result bundles with `xccov`.
+
+Other build systems can supply `--sources-manifest sources.json --target App`. The JSON shape is `{"root":".","targets":{"App":["Sources/App.swift","Shared"]}}`; root is relative to the manifest, entries relative to root. Exact compiler contexts still come from capture; directory membership is not a substitute for build configuration.
 
 ## Reports and gates
 
-```sh
-swift-crap analyze --project . --coverage unit.json --coverage integration.json --format json --threshold 30
-swift-crap analyze --project . --coverage current.json --baseline baseline.json --format json
-```
+Use `--format json` for deterministic machine-readable output, `--threshold 30` to select an absolute gate, and `--baseline previous.json` for a strict no-regression ratchet.
 
-Repeated LLVM observations union executed lines when their function mappings agree. Aggregate-only xccov reports cannot establish a union when observations differ; the tool rejects that ambiguity. Generate a combined Xcode coverage result before importing it.
-
-Exit codes:
-
-| Code | Meaning |
+| Exit | Meaning |
 | --- | --- |
 | 0 | Valid analysis; gate passes |
-| 1 | Invalid options, source, coverage, identity, or reconciliation |
+| 1 | Invalid options, source, provenance, coverage or reconciliation |
 | 2 | Valid analysis; gate fails |
 
-Without a baseline, scores strictly above the threshold fail. With a baseline, existing functions may retain their score, but any increase fails; new functions must satisfy the threshold. A baseline must use the same schema and metric, with unique callable IDs. Keep the same root, source selection, compiler, platform, and coverage policy across comparisons.
+Without a baseline, scores strictly above the threshold fail. With a baseline, any increase for an existing ID fails; new functions must satisfy the threshold. Keep selection, compiler/platform, configuration and missing-data policy consistent across comparisons.
 
-Missing required coverage is an error by default. `--missing zero` explicitly scores absent observations as zero coverage and labels each one `assumedZero`; it does not claim those functions were instrumented. A recorded function with zero execution remains `measured`.
+Captured analysis requires a baseline labeled `captured` with the same `buildIdentity`. That identity binds the canonical project root, exact selection and exclusions, and compiler contexts. Source inventories and output artifacts are excluded so changed or newly added functions can be compared. A legacy report without an identity cannot silently authorize a trusted gate.
 
-JSON reports contain `schemaVersion`, `metric`, `functions`, and `summary`. Functions include their qualified identity, location, complexity, measured counts, coverage fraction, CRAP score, and coverage status. Ordering and JSON keys are deterministic. Text is available with `--format text`.
+Identity is deliberately conservative and machine-local: changed SDK, compiler or search paths can invalidate a baseline. For repeated local or CI captures, use a stable checkout/build-cache location and fresh receipt/coverage output paths. The baseline is read once; the bytes checked for trust are the bytes used for comparison.
+
+Missing coverage is an error. `--missing zero` explicitly labels absent observations `assumedZero`; it never claims instrumentation. Actual zero execution is `measured`. Generic or compiler-unemitted functions can lack records even after a complete test run. Package-wide tests may also leave executable/example targets uninstrumented.
+
+Repeated LLVM artifacts union execution only when owned executable-line universes match. Nonidentical aggregate-only xccov observations cannot establish a union and are rejected.
+
+JSON includes `schemaVersion`, `metric`, `verification`, optional `buildIdentity`, `functions` and `summary`. Each function contains identity, location, complexity, counts, fraction, CRAP and coverage status. Ordering is stable; reports omit timestamps. The library leaves verification and build identity absent unless its caller supplies them.
 
 ## Engine libraries
 
-`CrapCore` exposes the callable/coverage model and `AnalysisEngine`. `CrapSyntax` exposes `SwiftSourceAnalyzer`, and `CrapCoverage` exposes `CompilerCoverageDecoder`. The core engine accepts values without reading source contents, launching subprocesses, or importing SwiftSyntax. Path reconciliation resolves filesystem symlinks; callers must supply a consistent analysis root.
+`CrapCore` exposes models and `AnalysisEngine`; `CrapSyntax` exposes `SwiftSourceAnalyzer`; `CrapCoverage` exposes `CompilerCoverageDecoder`. The core consumes values without launching a build, running tests or importing SwiftSyntax.
 
-```swift
-import CrapCore
-import CrapCoverage
-import CrapSyntax
+`SwiftSourceAnalyzer(configuration:)` uses SwiftIfConfig to traverse active syntax without moving original source positions. Its argument implements the upstream build-configuration capability. The parameterless initializer is an all-branches source inventory, not evidence about a specific build.
 
-let callables = try SwiftSourceAnalyzer().analyze(source: source, file: "Sources/Feature.swift")
-let coverage = try CompilerCoverageDecoder().decode(coverageJSON)
-let report = try AnalysisEngine().analyze(
-    callables: callables,
-    coverage: coverage.records,
-    root: projectRoot,
-    missing: .error,
-    threshold: 30
-)
-```
+See [metric semantics](docs/metrics.md), [architecture](docs/architecture.md), [compatibility evidence](docs/compatibility.md), and [contribution guidance](CONTRIBUTING.md).
 
-See [metric semantics](docs/metrics.md), [architecture](docs/architecture.md), and the executable tests for the behavioral contract.
+## Boundaries
 
-## Current boundaries
+- Only authored callables are inventoried; macro-generated declarations and compiler-generated thunks are not assigned invented source complexity.
+- Receipts detect accidental changes, not malicious builds or forged attestations. Captured roots and compiler contexts contain machine-local paths.
+- Unsupported or ambiguous syntax, contexts and coverage mappings fail explicitly. Support is established by the published compatibility evidence, not a universal guarantee.
+- LLVM expansion is limited to 1,000,000 source lines per function.
+- Named identities omit line numbers. Anonymous closures use lexical ordinals; inserting an earlier closure can shift later identities.
+- Review [SECURITY.md](SECURITY.md) before running third-party manifests or capture commands.
 
-The source inventory covers authored callables. It does not expand macros or evaluate build-specific conditional compilation. Platform-inactive code and compiler-uninstrumentable source can therefore require explicit scope selection or an acknowledged missing-coverage policy. Missing data never silently becomes a successful measurement.
+## License
 
-Coverage exports do not prove which source revision produced them. Supply artifacts from the exact source revision and build configuration being analyzed; source locations alone cannot detect every stale artifact. Ambiguous mappings are rejected.
-
-LLVM coverage expansion is limited to 1,000,000 source lines per function. Larger spans fail explicitly before allocation. This guards against tiny malformed artifacts requesting unbounded memory.
-
-Anonymous closure identities are relative to their enclosing declaration and lexical ordinal. Inserting an earlier anonymous closure changes later ordinals. Named callable IDs include qualified signatures and exclude line numbers.
+Apache-2.0; see [LICENSE](LICENSE), [NOTICE](NOTICE) and [third-party notices](THIRD_PARTY_NOTICES.md). This license is prepared for owner review before the repository is made public.

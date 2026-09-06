@@ -14,6 +14,13 @@ Build a standalone source-level Swift CRAP engine and CLI with project, package,
 - Source selection: validate roots before metadata execution, honor declared SwiftPM membership, refuse symlink escapes, and reapply exclusions to canonical paths.
 - Diagnostics and portability: preserve artifact paths in errors and use platform-appropriate process exits.
 - Architecture: retain a small public engine facade; separate validation, reconciliation, measurement, and baseline policy into cohesive internal types.
+- Provenance: reject changed source contents, input membership, artifacts, failed commands and reused output paths; canonicalize path aliases without changing the compiler driver's invoked name.
+- Build configuration: use compiler-backed conditional and parser-feature queries, including vendor version components and `objectFormat`, and ignore diagnostics only where the compiler leaves syntax unparsed.
+- Callable recovery: recognize addressors and conditional accessors without promoting similarly named helpers nested inside ordinary getter closures.
+- Duplicate SwiftPM builds: analyze shared source under every claiming context and reconcile only identical active callable inventories; never discard search paths to manufacture equality.
+- Xcode: use resolved target membership, preserve synchronized-folder exceptions, reject multi-architecture ambiguity and bind the exact selector to the captured inventory. Exercise real XCTest result bundles.
+- Baseline trust: require captured status and an exact build identity; reuse the same validated bytes during scoring. Do not bind source inventories or output artifacts into identity, since baselines must survive source evolution.
+- Repository reality: preserve failed upstream attempts, compare manually counted decisions with native per-function coverage and keep missing compiler records distinct from measured zero execution.
 
 Each accepted behavior is covered by a focused regression test. The complete local and CI gate is `./scripts/verify.sh`.
 
@@ -25,4 +32,4 @@ Each accepted behavior is covered by a focused regression test. The complete loc
 
 ## Explicit boundaries
 
-Xcode target discovery uses a source manifest. Macro-generated declarations and build-specific conditional selection are not synthesized. xccov validation uses schema fixtures, while LLVM integration uses real compiler exports. Coverage provenance and test assertion quality remain the caller's responsibility. These are documented capabilities, not silently inferred guarantees.
+The readiness work adds compiler-backed active regions, source/artifact capture receipts, resolved Xcode target membership, genuine xcresult integration and independently audited upstream packages. Macro-generated declarations remain outside authored inventory. Receipts are unsigned and cannot establish a malicious command's truthfulness; coverage still says nothing about assertion quality. Exact platform/corpus support and failed attempts are recorded in docs/compatibility.md.
