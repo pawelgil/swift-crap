@@ -1,3 +1,4 @@
+import CrapApplication
 @testable import CrapCLI
 import Foundation
 import Testing
@@ -29,6 +30,26 @@ struct SwiftPMCompilerContextsTests {
         let result = try CompilerProbe(context: context).evaluate("canImport(Logic)")
 
         #expect(result)
+    }
+
+    @Test func `probe normalizes parseable output without changing captured context`() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture) }
+        let description = try makeDescription(in: fixture)
+        let decoded = try #require(SwiftPMCompilerContexts().read(at: description.path, root: fixture.path).first)
+        let rawArguments = decoded.arguments + ["-use-frontend-parseable-output"]
+        let context = CompilerContext(
+            compiler: decoded.compiler,
+            arguments: rawArguments,
+            directory: decoded.directory,
+            sources: decoded.sources,
+            moduleName: decoded.moduleName,
+        )
+
+        let result = try CompilerProbe(context: context).evaluate("canImport(Logic)")
+
+        #expect(result)
+        #expect(context.arguments == rawArguments)
     }
 
     private func makeFixture() throws -> URL {

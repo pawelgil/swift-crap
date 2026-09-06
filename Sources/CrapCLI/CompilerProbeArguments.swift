@@ -15,6 +15,7 @@ struct CompilerProbeArguments {
                             "-emit-objc-header", "-emit-dependencies", "-emit-module-interface",
                             "-serialize-diagnostics",
                             "-incremental", "-enable-batch-mode", "-disable-batch-mode", "-parseable-output",
+                            "-use-frontend-parseable-output",
                             "-whole-module-optimization",
                             "-wmo", "-profile-generate", "-profile-coverage-mapping", "-frontend", "-typecheck",
                             "-v"]

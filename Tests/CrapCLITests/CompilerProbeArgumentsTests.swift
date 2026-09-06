@@ -7,7 +7,8 @@ struct CompilerProbeArgumentsTests {
             "-target", "arm64-apple-macosx13", "-sdk", "/SDK", "-DDEBUG", "-I", "/Modules", "-F", "/Frameworks",
             "-swift-version", "6", "-enable-experimental-feature", "Lifetimes", "-Xcc", "-DFEATURE",
             "-c", "-primary-file", "/Source.swift", "-o", "/output.o", "-module-cache-path", "/cache",
-            "-emit-module-source-info-path", "/output.swiftsourceinfo", "-profile-generate", "-j12",
+            "-emit-module-source-info-path", "/output.swiftsourceinfo", "-profile-generate",
+            "-use-frontend-parseable-output", "-j12",
         ])
         #expect(result == ["-target", "arm64-apple-macosx13", "-sdk", "/SDK", "-DDEBUG", "-I", "/Modules", "-F",
                            "/Frameworks", "-swift-version", "6", "-enable-experimental-feature", "Lifetimes",
