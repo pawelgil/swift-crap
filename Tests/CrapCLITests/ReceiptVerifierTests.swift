@@ -52,7 +52,7 @@ struct ReceiptVerifierTests {
     }
 
     @Test func `artifact aliases validate against canonical receipt key`() throws {
-        let fixture = try makePrivateTemporaryFixture()
+        let fixture = try makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture) }
         let source = fixture.appendingPathComponent("File.swift")
         let coverage = fixture.appendingPathComponent("coverage.json")
@@ -76,20 +76,15 @@ struct ReceiptVerifierTests {
             )],
             callables: [],
         )
-        let alias = coverage.path.replacingOccurrences(of: "/private/tmp/", with: "/tmp/")
+        let alias = fixture.appendingPathComponent("coverage-alias.json")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: coverage)
 
-        try ReceiptVerifier().validate(receipt, at: output.path, coverage: [alias])
+        try ReceiptVerifier().validate(receipt, at: output.path, coverage: [alias.path])
     }
 
     private func makeFixture() throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
         return directory.resolvingSymlinksInPath()
-    }
-
-    private func makePrivateTemporaryFixture() throws -> URL {
-        let directory = URL(fileURLWithPath: "/private/tmp/swift-crap-receipt-\(UUID())")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
-        return directory
     }
 }

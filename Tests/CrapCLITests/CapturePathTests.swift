@@ -18,12 +18,11 @@ struct CapturePathTests {
     @Test func `canonical artifact aliases are rejected`() throws {
         let fixture = try makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture) }
-        let privatePath = fixture.appendingPathComponent("coverage.json").path
-        let temporaryAlias = privatePath.replacingOccurrences(of: "/private/tmp/", with: "/tmp/")
+        let paths = try makeAliasedOutput(in: fixture)
 
         #expect(throws: (any Error).self) {
             try LocalCapturePathPreparer().prepare(
-                makeRequest(root: fixture, coverage: [privatePath, temporaryAlias]),
+                makeRequest(root: fixture, coverage: [paths.original, paths.alias]),
             )
         }
     }
@@ -31,14 +30,13 @@ struct CapturePathTests {
     @Test func `not yet created artifact uses resolved parent path`() throws {
         let fixture = try makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture) }
-        let privatePath = fixture.appendingPathComponent("coverage.json").path
-        let temporaryAlias = privatePath.replacingOccurrences(of: "/private/tmp/", with: "/tmp/")
+        let output = try makeAliasedOutput(in: fixture)
 
         let paths = try LocalCapturePathPreparer().prepare(
-            makeRequest(root: fixture, coverage: [temporaryAlias]),
+            makeRequest(root: fixture, coverage: [output.alias]),
         )
 
-        #expect(try paths.coverage == [CanonicalPath().resolve(privatePath)])
+        #expect(try paths.coverage == [CanonicalPath().resolve(output.original)])
     }
 
     @Test func `relative xcode project is stored relative to capture root`() throws {
@@ -81,9 +79,21 @@ struct CapturePathTests {
     }
 
     private func makeFixture() throws -> URL {
-        let directory = URL(fileURLWithPath: "/private/tmp/swift-crap-path-\(UUID())")
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swift-crap-path-\(UUID())")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
-        return directory
+        return directory.resolvingSymlinksInPath()
+    }
+
+    private func makeAliasedOutput(in root: URL) throws -> (original: String, alias: String) {
+        let original = root.appendingPathComponent("outputs", isDirectory: true)
+        let alias = root.appendingPathComponent("alias", isDirectory: true)
+        try FileManager.default.createDirectory(at: original, withIntermediateDirectories: false)
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: original)
+        return (
+            original.appendingPathComponent("coverage.json").path,
+            alias.appendingPathComponent("coverage.json").path,
+        )
     }
 
     private func makeRequest(root: URL, coverage: [String]) -> CaptureRequest {
