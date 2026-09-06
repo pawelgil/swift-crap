@@ -65,6 +65,8 @@ Actual SwiftDriver contexts differ from older indexing-derived contexts, so thei
 
 Missing native function records are a separate issue. Native regression fixtures show authored `#Preview` closures, unavailable initializers and an executing `@Observable` observer without independent LLVM function records. Neither a successful test run nor a neighboring function's execution proves coverage for those authored bodies. They remain strict missing-data errors unless the caller explicitly chooses `--missing zero`; that policy reports an assumption, not a measurement.
 
+Capture preserves available evidence; it cannot create a record the compiler did not emit. CLI diagnostics explain missing records without attributing them to a particular compiler bug. Reports with assumed-zero scores produce warnings on stderr, while JSON keeps the existing per-function status and summary counts. See [missing compiler coverage and mitigations](../README.md#missing-compiler-coverage).
+
 ## Legacy inputs
 
 `--trust-coverage unverified` opts out of provenance. It uses source inventory across all conditional branches and labels reports `unverified`. This is useful for investigation, not a substitute for captured evidence. `--missing zero` is a separate choice: even captured sources can lack compiler coverage records. An assumed zero remains visible in each function and summary.

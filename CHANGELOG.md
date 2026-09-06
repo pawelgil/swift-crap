@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- CLI warnings for assumed-zero coverage, actionable missing-record errors, and documented compiler limitations and helper-function mitigations.
+
 - Function-level `crap-line-v1` engine with explicit LLVM/xccov ownership and deterministic gates.
 - Project, package, target, explicit manifest, file and resolved Xcode target selection.
 - Capture receipts binding source inputs, coverage artifacts, command and compiler-aware callable inventory.
